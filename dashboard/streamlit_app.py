@@ -1,7 +1,7 @@
 import streamlit as st
 
-from dashboard.api_client import ApiClientError, fetch_health
-from dashboard.ui import backend_url_input, configure_page, render_error
+from api_client import ApiClientError, fetch_health
+from ui import backend_url_input, configure_page, render_error
 
 
 configure_page("Overview")

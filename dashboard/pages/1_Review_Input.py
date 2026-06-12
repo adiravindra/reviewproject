@@ -1,8 +1,8 @@
 import pandas as pd
 import streamlit as st
 
-from dashboard.api_client import ApiClientError, submit_review_batch, submit_single_review
-from dashboard.ui import (
+from api_client import ApiClientError, submit_review_batch, submit_single_review
+from ui import (
     DEFAULT_SAMPLE_REVIEWS,
     backend_url_input,
     configure_page,
