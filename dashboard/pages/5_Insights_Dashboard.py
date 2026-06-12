@@ -2,8 +2,8 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from dashboard.api_client import ApiClientError, fetch_review_insights
-from dashboard.ui import (
+from api_client import ApiClientError, fetch_review_insights
+from ui import (
     DEFAULT_SAMPLE_REVIEWS,
     backend_url_input,
     configure_page,
