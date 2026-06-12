@@ -1,81 +1,42 @@
-import pandas as pd
-import plotly.express as px
 import streamlit as st
 
-from dashboard.api_client import ApiClientError, fetch_review_insights
+from dashboard.api_client import ApiClientError, fetch_health
+from dashboard.ui import backend_url_input, configure_page, render_error
 
 
-st.set_page_config(page_title="ReviewInsight Dashboard", layout="wide")
+configure_page("Overview")
 
 st.title("ReviewInsight Dashboard")
+st.write("Customer review intelligence workspace for analysis, themes, summaries, and business action items.")
 
-api_base_url = st.sidebar.text_input(
-    "FastAPI backend URL",
-    value="http://127.0.0.1:8000",
+api_base_url = backend_url_input()
+
+st.subheader("Backend Connection")
+try:
+    health = fetch_health(api_base_url=api_base_url)
+except ApiClientError as exc:
+    render_error(exc)
+else:
+    status_col, project_col, version_col = st.columns(3)
+    status_col.metric("Status", str(health["status"]).upper())
+    project_col.metric("Project", health["project"])
+    version_col.metric("Version", health["version"])
+
+st.subheader("Analysis Workspace")
+kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4)
+kpi_col1.metric("Reviews Loaded", "Placeholder")
+kpi_col2.metric("Positive Share", "Placeholder")
+kpi_col3.metric("Top Theme", "Placeholder")
+kpi_col4.metric("Open Actions", "Placeholder")
+
+st.subheader("Pages")
+st.write(
+    "- Review Input: clean and validate single or batch review text.\n"
+    "- Sentiment Analysis: classify one review with the current rule-based service.\n"
+    "- Keyword / Themes: extract recurring words and business themes.\n"
+    "- Summarization: summarize one or more reviews.\n"
+    "- Insights Dashboard: combine sentiment, themes, complaints, summary, and action items.\n"
+    "- API Health: check backend status during development."
 )
 
-review_text = st.text_area(
-    "Customer reviews",
-    placeholder="Paste one customer review per line...",
-    height=220,
-)
-
-if st.button("Analyze Reviews", type="primary"):
-    reviews = review_text.splitlines()
-
-    try:
-        insights = fetch_review_insights(reviews, api_base_url=api_base_url)
-    except ApiClientError as exc:
-        st.error(str(exc))
-    else:
-        st.subheader("Analysis Results")
-
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Overall Sentiment", str(insights["overall_sentiment"]).title())
-        col2.metric("Reviews Analyzed", insights["review_count"])
-        col3.metric("Action Items", len(insights["suggested_action_items"]))
-
-        st.write("Summary")
-        st.info(insights["summary"])
-
-        breakdown = insights["sentiment_breakdown"]
-        chart_data = pd.DataFrame(
-            {
-                "Sentiment": [sentiment.title() for sentiment in breakdown.keys()],
-                "Reviews": list(breakdown.values()),
-            }
-        )
-        fig = px.bar(
-            chart_data,
-            x="Sentiment",
-            y="Reviews",
-            title="Sentiment Counts",
-            color="Sentiment",
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-        left_col, right_col = st.columns(2)
-        with left_col:
-            st.write("Positive Themes")
-            if insights["positive_themes"]:
-                st.write(", ".join(insights["positive_themes"]))
-            else:
-                st.caption("No positive themes found yet.")
-
-            st.write("Common Complaints")
-            if insights["common_complaints"]:
-                for complaint in insights["common_complaints"]:
-                    st.write(f"- {complaint}")
-            else:
-                st.caption("No recurring complaints found yet.")
-
-        with right_col:
-            st.write("Negative Themes")
-            if insights["negative_themes"]:
-                st.write(", ".join(insights["negative_themes"]))
-            else:
-                st.caption("No negative themes found yet.")
-
-            st.write("Suggested Action Items")
-            for action_item in insights["suggested_action_items"]:
-                st.write(f"- {action_item}")
+st.caption("Use the sidebar navigation to move through the analysis workflow.")
