@@ -43,7 +43,42 @@ Verify imports:
 python -c "import fastapi, streamlit, pandas, sklearn, transformers, torch, plotly, matplotlib; print('All imports worked')"
 ```
 
-## Run FastAPI
+## Helper Scripts
+
+The project includes cross-platform Python scripts that work on Windows, macOS, and Linux as long as you run them from the project folder with the virtual environment active.
+
+Run the full app, including FastAPI and Streamlit:
+
+```powershell
+python -m scripts.run_app
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8501
+```
+
+Run tests and Python compile checks:
+
+```powershell
+python -m scripts.run_tests
+```
+
+Run a smoke test that starts FastAPI and Streamlit, checks both health endpoints, then stops them:
+
+```powershell
+python -m scripts.smoke
+```
+
+Optional custom ports:
+
+```powershell
+python -m scripts.run_app --backend-port 8010 --streamlit-port 8510
+python -m scripts.smoke --backend-port 8010 --streamlit-port 8510
+```
+
+## Run FastAPI Manually
 
 ```powershell
 uvicorn backend.app.main:app --reload
@@ -61,7 +96,7 @@ Analyze a review:
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/analyze -ContentType "application/json" -Body '{"text":"The product is easy to use, but shipping was slow."}'
 ```
 
-## Run Streamlit
+## Run Streamlit Manually
 
 ```powershell
 streamlit run dashboard\streamlit_app.py
