@@ -220,3 +220,6 @@ __marimo__/
 # Codex
 codex/
 .codex_runtime/
+
+# ReviewInsight local runtime data
+data/review_history.json
