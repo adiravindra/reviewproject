@@ -136,6 +136,35 @@ def fetch_dashboard_metrics(
     return _parse_response(response)
 
 
+def fetch_latest_analysis(
+    api_base_url: str = DEFAULT_API_BASE_URL,
+    get: GetFunction = requests.get,
+) -> dict[str, Any]:
+    try:
+        response = get(_api_url(api_base_url, "/analysis/latest"), timeout=10)
+    except Exception as exc:
+        raise ApiClientError("Could not load the latest analysis from the backend.") from exc
+
+    return _parse_response(response)
+
+
+def fetch_review_detail(
+    run_id: str,
+    review_index: int,
+    api_base_url: str = DEFAULT_API_BASE_URL,
+    get: GetFunction = requests.get,
+) -> dict[str, Any]:
+    try:
+        response = get(
+            _api_url(api_base_url, f"/analysis/runs/{run_id}/reviews/{review_index}"),
+            timeout=10,
+        )
+    except Exception as exc:
+        raise ApiClientError("Could not load review details from the backend.") from exc
+
+    return _parse_response(response)
+
+
 def submit_single_review(
     review_text: str,
     api_base_url: str = DEFAULT_API_BASE_URL,

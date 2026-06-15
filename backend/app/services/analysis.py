@@ -18,6 +18,7 @@ from backend.app.services.summarization import summarize_reviews
 
 
 REVIEW_COLUMN_CANDIDATES = {"review", "reviews", "text", "comment", "feedback"}
+URGENCY_SCORE = {"low": 1, "medium": 2, "high": 3}
 
 
 def analyze_reviews(review_texts: list[str], source: str = "manual") -> AnalysisRunResponse:
@@ -33,6 +34,7 @@ def analyze_reviews(review_texts: list[str], source: str = "manual") -> Analysis
         reviews=review_results,
         summary=summary,
         metrics=_build_metrics(cleaned_reviews, review_results),
+        most_urgent_reviews=_most_urgent_reviews(review_results),
     )
 
 
@@ -79,6 +81,7 @@ def _build_metrics(review_texts: list[str], review_results: list[ReviewResult]) 
     insights = build_insights(review_texts)
     urgency_counts = Counter(result.urgency for result in review_results)
     topic_counts = Counter(result.topic for result in review_results)
+    urgency_scores = [URGENCY_SCORE.get(result.urgency, 1) for result in review_results]
 
     return AnalysisMetrics(
         review_count=len(review_results),
@@ -93,8 +96,17 @@ def _build_metrics(review_texts: list[str], review_results: list[ReviewResult]) 
             KeywordItem(keyword=topic, count=count)
             for topic, count in topic_counts.most_common(5)
         ],
+        average_urgency=round(sum(urgency_scores) / len(urgency_scores), 2),
         high_priority_reviews=urgency_counts.get("high", 0),
     )
+
+
+def _most_urgent_reviews(review_results: list[ReviewResult], limit: int = 5) -> list[ReviewResult]:
+    return sorted(
+        review_results,
+        key=lambda result: (URGENCY_SCORE.get(result.urgency, 1), abs(result.sentiment_score)),
+        reverse=True,
+    )[:limit]
 
 
 def _find_review_column(fieldnames: list[str]) -> str:

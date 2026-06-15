@@ -2,15 +2,22 @@ import pandas as pd
 import streamlit as st
 
 from api_client import ApiClientError, fetch_history
-from ui import backend_url_input, configure_page, render_error, render_hero, render_panel
+from ui import (
+    configure_page,
+    render_backend_control,
+    render_error,
+    render_hero,
+    render_panel,
+    render_top_nav,
+)
 
 
 configure_page("History")
-
-api_base_url = backend_url_input()
+render_top_nav()
+api_base_url = render_backend_control()
 
 render_hero(
-    "Analysis History",
+    "History",
     "Review previously saved analysis runs from manual input, CSV uploads, and API-style payloads.",
 )
 
@@ -21,7 +28,7 @@ except ApiClientError as exc:
 else:
     items = history.get("items", [])
     if not items:
-        render_panel("No history yet", "Run an analysis from the homepage to create the first saved record.")
+        render_panel("No history yet", "Run an analysis from Home/Add Reviews to create the first saved record.")
     else:
         st.metric("Saved Runs", len(items))
         st.dataframe(

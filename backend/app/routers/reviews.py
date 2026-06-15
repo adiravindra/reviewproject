@@ -12,6 +12,7 @@ from backend.app.schemas.reviews import (
     ReviewBatchAnalysisRequest,
     ReviewBatchInput,
     ReviewCollectionResponse,
+    ReviewDetailResponse,
     ReviewInput,
     SentimentResponse,
     SingleReviewAnalysisRequest,
@@ -19,8 +20,11 @@ from backend.app.schemas.reviews import (
 )
 from backend.app.services.analysis import analyze_reviews, estimate_urgency, parse_csv_reviews
 from backend.app.services.history import (
+    get_analysis_run,
     get_dashboard_metrics,
     get_history,
+    get_latest_analysis_run,
+    get_review_detail,
     save_analysis_run,
 )
 from backend.app.services.insights import build_insights
@@ -140,6 +144,30 @@ async def analyze_review_csv(file: UploadFile = File(...)) -> AnalysisRunRespons
 @router.get("/history", response_model=HistoryResponse)
 def analysis_history(limit: int = Query(default=25, ge=1, le=100)) -> HistoryResponse:
     return get_history(limit=limit)
+
+
+@router.get("/analysis/runs/{run_id}", response_model=AnalysisRunResponse)
+def analysis_run_detail(run_id: str) -> AnalysisRunResponse:
+    run = get_analysis_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis run not found.")
+    return run
+
+
+@router.get("/analysis/latest", response_model=AnalysisRunResponse)
+def latest_analysis_run() -> AnalysisRunResponse:
+    run = get_latest_analysis_run()
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No analysis history found.")
+    return run
+
+
+@router.get("/analysis/runs/{run_id}/reviews/{review_index}", response_model=ReviewDetailResponse)
+def analysis_review_detail(run_id: str, review_index: int) -> ReviewDetailResponse:
+    detail = get_review_detail(run_id, review_index)
+    if detail is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Review detail not found.")
+    return detail
 
 
 @router.get("/dashboard/metrics", response_model=DashboardMetricsResponse)

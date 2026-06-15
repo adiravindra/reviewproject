@@ -60,6 +60,7 @@ class AnalysisMetrics(BaseModel):
     sentiment_breakdown: dict[str, int]
     urgency_breakdown: dict[str, int]
     top_topics: list[KeywordItem]
+    average_urgency: float
     high_priority_reviews: int
 
 
@@ -71,6 +72,13 @@ class AnalysisRunResponse(BaseModel):
     reviews: list[ReviewResult]
     summary: str
     metrics: AnalysisMetrics
+    most_urgent_reviews: list[ReviewResult]
+
+
+class ReviewDetailResponse(BaseModel):
+    run_id: str
+    review_index: int
+    review: ReviewResult
 
 
 class HistoryItem(BaseModel):

@@ -1,6 +1,12 @@
 import unittest
 
-from dashboard.ui import parse_api_review_payload, sentiment_breakdown_rows, split_review_lines
+from dashboard.ui import (
+    average_urgency_label,
+    loaded_analysis_reviews,
+    parse_api_review_payload,
+    sentiment_breakdown_rows,
+    split_review_lines,
+)
 
 
 class DashboardUiTests(unittest.TestCase):
@@ -35,6 +41,16 @@ class DashboardUiTests(unittest.TestCase):
     def test_parse_api_review_payload_rejects_invalid_json(self) -> None:
         with self.assertRaises(ValueError):
             parse_api_review_payload("{invalid")
+
+    def test_loaded_analysis_reviews_returns_review_list(self) -> None:
+        self.assertEqual(
+            loaded_analysis_reviews({"reviews": [{"text": "Great"}, {"text": "Slow"}]}),
+            [{"text": "Great"}, {"text": "Slow"}],
+        )
+
+    def test_average_urgency_label_formats_numeric_score(self) -> None:
+        self.assertEqual(average_urgency_label(2.0), "Medium")
+        self.assertEqual(average_urgency_label(3.0), "High")
 
 
 if __name__ == "__main__":
