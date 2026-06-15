@@ -1,16 +1,27 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 
 from backend.app.schemas.reviews import (
+    AnalysisRunResponse,
     CleanedReview,
+    DashboardMetricsResponse,
+    HistoryResponse,
     InsightsResponse,
     KeywordItem,
     KeywordResponse,
     ReviewAnalysis,
+    ReviewBatchAnalysisRequest,
     ReviewBatchInput,
     ReviewCollectionResponse,
     ReviewInput,
     SentimentResponse,
+    SingleReviewAnalysisRequest,
     SummaryResponse,
+)
+from backend.app.services.analysis import analyze_reviews, estimate_urgency, parse_csv_reviews
+from backend.app.services.history import (
+    get_dashboard_metrics,
+    get_history,
+    save_analysis_run,
 )
 from backend.app.services.insights import build_insights
 from backend.app.services.keywords import extract_keywords, extract_themes
@@ -89,6 +100,53 @@ def generate_review_insights(review_batch: ReviewBatchInput) -> InsightsResponse
     return InsightsResponse(**build_insights(review_texts))
 
 
+@router.post("/analysis/review", response_model=AnalysisRunResponse)
+def analyze_single_review(review: SingleReviewAnalysisRequest) -> AnalysisRunResponse:
+    run = analyze_reviews([review.text], source=review.source)
+    save_analysis_run(run)
+    return run
+
+
+@router.post("/analysis/reviews", response_model=AnalysisRunResponse)
+def analyze_review_batch(review_batch: ReviewBatchAnalysisRequest) -> AnalysisRunResponse:
+    run = analyze_reviews(
+        [review.text for review in review_batch.reviews],
+        source=review_batch.source,
+    )
+    save_analysis_run(run)
+    return run
+
+
+@router.post("/analysis/csv", response_model=AnalysisRunResponse)
+async def analyze_review_csv(file: UploadFile = File(...)) -> AnalysisRunResponse:
+    try:
+        review_texts = parse_csv_reviews(await file.read())
+    except UnicodeDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="CSV upload must be UTF-8 encoded.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
+
+    run = analyze_reviews(review_texts, source="csv")
+    save_analysis_run(run)
+    return run
+
+
+@router.get("/history", response_model=HistoryResponse)
+def analysis_history(limit: int = Query(default=25, ge=1, le=100)) -> HistoryResponse:
+    return get_history(limit=limit)
+
+
+@router.get("/dashboard/metrics", response_model=DashboardMetricsResponse)
+def dashboard_metrics() -> DashboardMetricsResponse:
+    return get_dashboard_metrics()
+
+
 @router.post("/analyze", response_model=ReviewAnalysis)
 def analyze_review(review: ReviewInput) -> ReviewAnalysis:
     review_text = _prepare_or_422([review.text])[0]
@@ -98,17 +156,6 @@ def analyze_review(review: ReviewInput) -> ReviewAnalysis:
     return ReviewAnalysis(
         sentiment=sentiment,
         topic=themes[0][0] if themes else "general feedback",
-        urgency=_estimate_urgency(review_text, sentiment),
+        urgency=estimate_urgency(review_text, sentiment),
         summary=summarize_reviews([review_text]),
     )
-
-
-def _estimate_urgency(review_text: str, sentiment: str) -> str:
-    urgent_terms = {"broken", "refund", "terrible", "worst", "urgent"}
-    words = {word.strip(".,!?;:()[]{}\"'").casefold() for word in review_text.split()}
-
-    if words & urgent_terms:
-        return "high"
-    if sentiment == "negative":
-        return "medium"
-    return "low"

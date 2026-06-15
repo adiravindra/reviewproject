@@ -2,7 +2,12 @@ import unittest
 
 from dashboard.api_client import (
     ApiClientError,
+    analyze_reviews_csv,
+    analyze_reviews_from_api_payload,
+    analyze_single_review,
+    fetch_dashboard_metrics,
     fetch_health,
+    fetch_history,
     fetch_keywords,
     fetch_review_insights,
     fetch_sentiment,
@@ -181,6 +186,90 @@ class DashboardApiClientTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ApiClientError, "Could not analyze reviews"):
             fetch_review_insights(["Good product"], post=fake_post)
+
+    def test_analyze_single_review_posts_to_analysis_review_endpoint(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        def fake_post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            calls.append({"url": url, "json": json, "timeout": timeout})
+            return FakeResponse(200, {"id": "run-1", "review_count": 1, "reviews": [], "metrics": {}})
+
+        result = analyze_single_review(
+            " Great quality ",
+            api_base_url="http://localhost:8000/",
+            post=fake_post,
+        )
+
+        self.assertEqual(result["id"], "run-1")
+        self.assertEqual(
+            calls,
+            [
+                {
+                    "url": "http://localhost:8000/analysis/review",
+                    "json": {"text": "Great quality", "source": "manual"},
+                    "timeout": 10,
+                }
+            ],
+        )
+
+    def test_analyze_reviews_from_api_payload_posts_to_analysis_reviews_endpoint(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        def fake_post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            calls.append({"url": url, "json": json, "timeout": timeout})
+            return FakeResponse(200, {"id": "run-2", "review_count": 2, "reviews": [], "metrics": {}})
+
+        result = analyze_reviews_from_api_payload(
+            ["Helpful support", "Slow shipping"],
+            api_base_url="http://localhost:8000/",
+            post=fake_post,
+        )
+
+        self.assertEqual(result["id"], "run-2")
+        self.assertEqual(calls[0]["url"], "http://localhost:8000/analysis/reviews")
+        self.assertEqual(calls[0]["json"]["source"], "api")
+
+    def test_analyze_reviews_csv_posts_file_to_analysis_csv_endpoint(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        def fake_post(url: str, files: dict[str, object], timeout: int) -> FakeResponse:
+            calls.append({"url": url, "files": files, "timeout": timeout})
+            return FakeResponse(200, {"id": "run-3", "review_count": 2, "reviews": [], "metrics": {}})
+
+        result = analyze_reviews_csv(
+            "reviews.csv",
+            b"review\nGreat product\nSlow shipping\n",
+            api_base_url="http://localhost:8000/",
+            post=fake_post,
+        )
+
+        self.assertEqual(result["id"], "run-3")
+        self.assertEqual(calls[0]["url"], "http://localhost:8000/analysis/csv")
+        self.assertEqual(calls[0]["files"]["file"][0], "reviews.csv")
+
+    def test_fetch_history_calls_history_endpoint(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        def fake_get(url: str, timeout: int) -> FakeResponse:
+            calls.append({"url": url, "timeout": timeout})
+            return FakeResponse(200, {"items": []})
+
+        result = fetch_history(api_base_url="http://localhost:8000/", get=fake_get)
+
+        self.assertEqual(result["items"], [])
+        self.assertEqual(calls, [{"url": "http://localhost:8000/history", "timeout": 10}])
+
+    def test_fetch_dashboard_metrics_calls_metrics_endpoint(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        def fake_get(url: str, timeout: int) -> FakeResponse:
+            calls.append({"url": url, "timeout": timeout})
+            return FakeResponse(200, {"total_runs": 0, "total_reviews": 0})
+
+        result = fetch_dashboard_metrics(api_base_url="http://localhost:8000/", get=fake_get)
+
+        self.assertEqual(result["total_runs"], 0)
+        self.assertEqual(calls, [{"url": "http://localhost:8000/dashboard/metrics", "timeout": 10}])
 
 
 if __name__ == "__main__":

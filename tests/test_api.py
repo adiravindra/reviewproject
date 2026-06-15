@@ -127,6 +127,80 @@ class ReviewInsightApiTests(unittest.TestCase):
             {"sentiment", "topic", "urgency", "summary"},
         )
 
+    def test_analysis_review_endpoint_returns_full_analysis_and_saves_history(self) -> None:
+        response = client.post(
+            "/analysis/review",
+            json={
+                "text": "The product quality is great but shipping was late.",
+                "source": "manual",
+            },
+        )
+
+        body = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["source"], "manual")
+        self.assertEqual(body["review_count"], 1)
+        self.assertEqual(body["reviews"][0]["text"], "The product quality is great but shipping was late.")
+        self.assertIn(body["reviews"][0]["sentiment"], {"positive", "neutral", "negative"})
+        self.assertIn(body["reviews"][0]["urgency"], {"low", "medium", "high"})
+        self.assertIn("summary", body)
+        self.assertIn("metrics", body)
+        self.assertIn("id", body)
+
+        history_response = client.get("/history?limit=5")
+        self.assertEqual(history_response.status_code, 200)
+        self.assertTrue(
+            any(item["id"] == body["id"] for item in history_response.json()["items"])
+        )
+
+    def test_analysis_reviews_endpoint_accepts_api_batch_payload(self) -> None:
+        response = client.post(
+            "/analysis/reviews",
+            json={
+                "source": "api",
+                "reviews": [
+                    {"text": "Support was helpful and fast."},
+                    {"text": "The setup was confusing and difficult."},
+                ],
+            },
+        )
+
+        body = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["source"], "api")
+        self.assertEqual(body["review_count"], 2)
+        self.assertEqual(len(body["reviews"]), 2)
+        self.assertEqual(
+            sum(body["metrics"]["sentiment_breakdown"].values()),
+            2,
+        )
+
+    def test_analysis_csv_endpoint_extracts_review_column(self) -> None:
+        csv_content = "review,rating\nFast delivery and great quality,5\nShipping was late and slow,2\n"
+
+        response = client.post(
+            "/analysis/csv",
+            files={"file": ("reviews.csv", csv_content, "text/csv")},
+        )
+
+        body = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["source"], "csv")
+        self.assertEqual(body["review_count"], 2)
+        self.assertEqual(len(body["reviews"]), 2)
+
+    def test_dashboard_metrics_endpoint_returns_history_rollup(self) -> None:
+        client.post("/analysis/review", json={"text": "Excellent support and easy setup."})
+
+        response = client.get("/dashboard/metrics")
+
+        body = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(body["total_runs"], 1)
+        self.assertGreaterEqual(body["total_reviews"], 1)
+        self.assertIn("sentiment_breakdown", body)
+        self.assertIn("urgency_breakdown", body)
+
 
 if __name__ == "__main__":
     unittest.main()

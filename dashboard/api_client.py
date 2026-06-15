@@ -67,6 +67,75 @@ def fetch_health(
     return _parse_response(response)
 
 
+def analyze_single_review(
+    review_text: str,
+    api_base_url: str = DEFAULT_API_BASE_URL,
+    post: PostFunction = requests.post,
+) -> dict[str, Any]:
+    response = post(
+        _api_url(api_base_url, "/analysis/review"),
+        json={"text": _clean_review_text(review_text), "source": "manual"},
+        timeout=10,
+    )
+    return _parse_response(response)
+
+
+def analyze_reviews_from_api_payload(
+    review_texts: list[str],
+    api_base_url: str = DEFAULT_API_BASE_URL,
+    post: PostFunction = requests.post,
+) -> dict[str, Any]:
+    payload = _review_payload(review_texts)
+    payload["source"] = "api"
+    response = post(
+        _api_url(api_base_url, "/analysis/reviews"),
+        json=payload,
+        timeout=10,
+    )
+    return _parse_response(response)
+
+
+def analyze_reviews_csv(
+    filename: str,
+    contents: bytes,
+    api_base_url: str = DEFAULT_API_BASE_URL,
+    post: PostFunction = requests.post,
+) -> dict[str, Any]:
+    if not contents:
+        raise ApiClientError("Upload a CSV file before analyzing.")
+
+    response = post(
+        _api_url(api_base_url, "/analysis/csv"),
+        files={"file": (filename, contents, "text/csv")},
+        timeout=10,
+    )
+    return _parse_response(response)
+
+
+def fetch_history(
+    api_base_url: str = DEFAULT_API_BASE_URL,
+    get: GetFunction = requests.get,
+) -> dict[str, Any]:
+    try:
+        response = get(_api_url(api_base_url, "/history"), timeout=10)
+    except Exception as exc:
+        raise ApiClientError("Could not load analysis history from the backend.") from exc
+
+    return _parse_response(response)
+
+
+def fetch_dashboard_metrics(
+    api_base_url: str = DEFAULT_API_BASE_URL,
+    get: GetFunction = requests.get,
+) -> dict[str, Any]:
+    try:
+        response = get(_api_url(api_base_url, "/dashboard/metrics"), timeout=10)
+    except Exception as exc:
+        raise ApiClientError("Could not load dashboard metrics from the backend.") from exc
+
+    return _parse_response(response)
+
+
 def submit_single_review(
     review_text: str,
     api_base_url: str = DEFAULT_API_BASE_URL,
