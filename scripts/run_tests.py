@@ -11,12 +11,13 @@ PYTHON_FILES = [
     project_path("dashboard", "api_client.py"),
     project_path("dashboard", "streamlit_app.py"),
     project_path("dashboard", "ui.py"),
-    project_path("dashboard", "pages", "1_Review_Input.py"),
-    project_path("dashboard", "pages", "2_Sentiment_Analysis.py"),
-    project_path("dashboard", "pages", "3_Keyword_Themes.py"),
-    project_path("dashboard", "pages", "4_Summarization.py"),
-    project_path("dashboard", "pages", "5_Insights_Dashboard.py"),
-    project_path("dashboard", "pages", "6_API_Health.py"),
+    project_path("dashboard", "pages", "1_Sentiment_Analysis.py"),
+    project_path("dashboard", "pages", "2_Topic_Category_Analysis.py"),
+    project_path("dashboard", "pages", "3_Urgency_Priority.py"),
+    project_path("dashboard", "pages", "4_GenAI_Summary_Insights.py"),
+    project_path("dashboard", "pages", "5_Overall_Dashboard.py"),
+    project_path("dashboard", "pages", "6_History.py"),
+    project_path("dashboard", "pages", "7_API_Health.py"),
 ]
 
 
