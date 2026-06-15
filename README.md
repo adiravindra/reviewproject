@@ -119,7 +119,7 @@ streamlit run dashboard\streamlit_app.py
 
 - Project structure exists.
 - Dependencies are listed in `requirements.txt`.
-- FastAPI has `/health`, legacy `/analyze`, full analysis, CSV upload, history, and dashboard metrics endpoints.
-- Streamlit has a product-style analysis homepage plus sentiment, topic, urgency, summary, overall dashboard, history, and API health pages.
+- FastAPI has `/health`, legacy `/analyze`, full analysis, CSV upload, latest-run, review-detail, history, and dashboard metrics endpoints.
+- Streamlit has a product-style Home/Add Reviews input page plus top-nav Overview, Review Details, Sentiment, Topics, Urgency, Summaries, and History pages that explore the loaded analysis.
 - Analysis history is stored locally in `data/review_history.json`, which is ignored by git.
 - Real ML models are not connected yet.

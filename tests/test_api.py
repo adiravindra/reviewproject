@@ -174,6 +174,10 @@ class ReviewInsightApiTests(unittest.TestCase):
             sum(body["metrics"]["sentiment_breakdown"].values()),
             2,
         )
+        self.assertIn("average_urgency", body["metrics"])
+        self.assertGreaterEqual(body["metrics"]["average_urgency"], 1.0)
+        self.assertIn("most_urgent_reviews", body)
+        self.assertGreaterEqual(len(body["most_urgent_reviews"]), 1)
 
     def test_analysis_csv_endpoint_extracts_review_column(self) -> None:
         csv_content = "review,rating\nFast delivery and great quality,5\nShipping was late and slow,2\n"
@@ -188,6 +192,42 @@ class ReviewInsightApiTests(unittest.TestCase):
         self.assertEqual(body["source"], "csv")
         self.assertEqual(body["review_count"], 2)
         self.assertEqual(len(body["reviews"]), 2)
+
+    def test_analysis_run_detail_and_review_detail_can_be_loaded_from_history(self) -> None:
+        create_response = client.post(
+            "/analysis/reviews",
+            json={
+                "source": "api",
+                "reviews": [
+                    {"text": "Excellent support and easy setup."},
+                    {"text": "The package arrived broken and I need an urgent refund."},
+                ],
+            },
+        )
+        created_run = create_response.json()
+
+        run_response = client.get(f"/analysis/runs/{created_run['id']}")
+        self.assertEqual(run_response.status_code, 200)
+        self.assertEqual(run_response.json()["id"], created_run["id"])
+
+        detail_response = client.get(f"/analysis/runs/{created_run['id']}/reviews/1")
+        detail_body = detail_response.json()
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_body["run_id"], created_run["id"])
+        self.assertEqual(detail_body["review_index"], 1)
+        self.assertEqual(detail_body["review"]["urgency"], "high")
+
+    def test_latest_analysis_run_returns_most_recent_saved_run(self) -> None:
+        create_response = client.post(
+            "/analysis/review",
+            json={"text": "Helpful support and fast delivery.", "source": "manual"},
+        )
+        created_run = create_response.json()
+
+        latest_response = client.get("/analysis/latest")
+
+        self.assertEqual(latest_response.status_code, 200)
+        self.assertEqual(latest_response.json()["id"], created_run["id"])
 
     def test_dashboard_metrics_endpoint_returns_history_rollup(self) -> None:
         client.post("/analysis/review", json={"text": "Excellent support and easy setup."})

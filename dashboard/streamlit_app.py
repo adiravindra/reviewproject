@@ -11,20 +11,24 @@ from api_client import (
     fetch_health,
 )
 from ui import (
-    backend_url_input,
     configure_page,
+    render_backend_control,
     parse_api_review_payload,
     render_analysis_result,
     render_error,
     render_hero,
     render_panel,
     render_status_chips,
+    render_top_nav,
+    store_latest_analysis,
 )
 
 
 configure_page("Home")
+render_top_nav()
 
-api_base_url = backend_url_input()
+api_base_url = render_backend_control()
+st.session_state["api_base_url"] = api_base_url
 
 render_hero(
     "ReviewInsight",
@@ -77,12 +81,12 @@ with single_tab:
     )
     if st.button("Analyze Review", type="primary", key="home_single"):
         try:
-            st.session_state["latest_analysis"] = analyze_single_review(
-                review_text,
-                api_base_url=api_base_url,
-            )
+            result = analyze_single_review(review_text, api_base_url=api_base_url)
         except ApiClientError as exc:
             render_error(exc)
+        else:
+            store_latest_analysis(result)
+            st.success("Review loaded. Explore the analysis pages from the top navigation.")
 
 with csv_tab:
     uploaded_file = st.file_uploader(
@@ -94,13 +98,16 @@ with csv_tab:
             st.warning("Upload a CSV file before analyzing.")
         else:
             try:
-                st.session_state["latest_analysis"] = analyze_reviews_csv(
+                result = analyze_reviews_csv(
                     uploaded_file.name,
                     uploaded_file.getvalue(),
                     api_base_url=api_base_url,
                 )
             except ApiClientError as exc:
                 render_error(exc)
+            else:
+                store_latest_analysis(result)
+                st.success("CSV reviews loaded. Explore the analysis pages from the top navigation.")
 
 with api_tab:
     default_payload = json.dumps(
@@ -120,12 +127,15 @@ with api_tab:
     if st.button("Analyze API Payload", type="primary", key="home_api"):
         try:
             review_texts = parse_api_review_payload(raw_payload)
-            st.session_state["latest_analysis"] = analyze_reviews_from_api_payload(
+            result = analyze_reviews_from_api_payload(
                 review_texts,
                 api_base_url=api_base_url,
             )
         except (ApiClientError, ValueError) as exc:
             render_error(exc)
+        else:
+            store_latest_analysis(result)
+            st.success("API payload reviews loaded. Explore the analysis pages from the top navigation.")
 
 with future_tab:
     render_panel(

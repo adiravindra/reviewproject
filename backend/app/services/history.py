@@ -10,6 +10,7 @@ from backend.app.schemas.reviews import (
     HistoryItem,
     HistoryResponse,
     KeywordItem,
+    ReviewDetailResponse,
 )
 
 
@@ -37,6 +38,32 @@ def get_history(limit: int = 25) -> HistoryResponse:
         for record in records[:limit]
     ]
     return HistoryResponse(items=items)
+
+
+def get_analysis_run(run_id: str) -> AnalysisRunResponse | None:
+    for record in _read_records():
+        if str(record.get("id")) == run_id:
+            return AnalysisRunResponse(**_normalize_analysis_record(record))
+    return None
+
+
+def get_latest_analysis_run() -> AnalysisRunResponse | None:
+    records = sorted(_read_records(), key=lambda item: item.get("created_at", ""), reverse=True)
+    if not records:
+        return None
+    return AnalysisRunResponse(**_normalize_analysis_record(records[0]))
+
+
+def get_review_detail(run_id: str, review_index: int) -> ReviewDetailResponse | None:
+    run = get_analysis_run(run_id)
+    if run is None or review_index < 0 or review_index >= len(run.reviews):
+        return None
+
+    return ReviewDetailResponse(
+        run_id=run.id,
+        review_index=review_index,
+        review=run.reviews[review_index],
+    )
 
 
 def get_dashboard_metrics() -> DashboardMetricsResponse:
@@ -101,3 +128,30 @@ def _model_to_dict(model: AnalysisRunResponse) -> dict[str, Any]:
     if hasattr(model, "model_dump"):
         return model.model_dump()
     return model.dict()
+
+
+def _normalize_analysis_record(record: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(record)
+    metrics = dict(normalized.get("metrics", {}))
+    reviews = list(normalized.get("reviews", []))
+
+    if "average_urgency" not in metrics:
+        scores = [_urgency_score(str(review.get("urgency", "low"))) for review in reviews]
+        metrics["average_urgency"] = round(sum(scores) / len(scores), 2) if scores else 0.0
+
+    if "most_urgent_reviews" not in normalized:
+        normalized["most_urgent_reviews"] = sorted(
+            reviews,
+            key=lambda review: (
+                _urgency_score(str(review.get("urgency", "low"))),
+                abs(int(review.get("sentiment_score", 0))),
+            ),
+            reverse=True,
+        )[:5]
+
+    normalized["metrics"] = metrics
+    return normalized
+
+
+def _urgency_score(urgency: str) -> int:
+    return {"low": 1, "medium": 2, "high": 3}.get(urgency, 1)

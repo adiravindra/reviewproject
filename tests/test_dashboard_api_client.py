@@ -9,6 +9,8 @@ from dashboard.api_client import (
     fetch_health,
     fetch_history,
     fetch_keywords,
+    fetch_latest_analysis,
+    fetch_review_detail,
     fetch_review_insights,
     fetch_sentiment,
     fetch_summary,
@@ -270,6 +272,45 @@ class DashboardApiClientTests(unittest.TestCase):
 
         self.assertEqual(result["total_runs"], 0)
         self.assertEqual(calls, [{"url": "http://localhost:8000/dashboard/metrics", "timeout": 10}])
+
+    def test_fetch_review_detail_calls_run_review_endpoint(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        def fake_get(url: str, timeout: int) -> FakeResponse:
+            calls.append({"url": url, "timeout": timeout})
+            return FakeResponse(
+                200,
+                {
+                    "run_id": "run-1",
+                    "review_index": 2,
+                    "review": {"text": "Helpful support", "sentiment": "positive"},
+                },
+            )
+
+        result = fetch_review_detail(
+            "run-1",
+            2,
+            api_base_url="http://localhost:8000/",
+            get=fake_get,
+        )
+
+        self.assertEqual(result["review_index"], 2)
+        self.assertEqual(
+            calls,
+            [{"url": "http://localhost:8000/analysis/runs/run-1/reviews/2", "timeout": 10}],
+        )
+
+    def test_fetch_latest_analysis_calls_latest_endpoint(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        def fake_get(url: str, timeout: int) -> FakeResponse:
+            calls.append({"url": url, "timeout": timeout})
+            return FakeResponse(200, {"id": "run-latest", "reviews": [], "metrics": {}})
+
+        result = fetch_latest_analysis(api_base_url="http://localhost:8000/", get=fake_get)
+
+        self.assertEqual(result["id"], "run-latest")
+        self.assertEqual(calls, [{"url": "http://localhost:8000/analysis/latest", "timeout": 10}])
 
 
 if __name__ == "__main__":

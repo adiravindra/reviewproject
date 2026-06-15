@@ -6,8 +6,9 @@ This document describes the Streamlit frontend for ReviewInsight. The UI is an a
 
 - Give each major backend capability its own Streamlit page.
 - Make the app feel like a review analysis dashboard, not a generic text prompt.
-- Keep placeholder sections visible for planned features such as CSV upload, model confidence, topic modeling, and richer trends.
+- Keep Home/Add Reviews as the only review input surface.
 - Keep FastAPI as the source of analysis logic. Streamlit should collect inputs, call the API, and render results.
+- Let the other pages explore the loaded analysis from Streamlit session state or backend history.
 
 ## App Structure
 
@@ -17,13 +18,13 @@ dashboard/
   api_client.py                 # Shared FastAPI client helpers
   ui.py                         # Shared Streamlit rendering helpers
   pages/
-    1_Sentiment_Analysis.py
-    2_Topic_Category_Analysis.py
-    3_Urgency_Priority.py
-    4_GenAI_Summary_Insights.py
-    5_Overall_Dashboard.py
-    6_History.py
-    7_API_Health.py
+    1_Overview.py
+    2_Review_Details.py
+    3_Sentiment.py
+    4_Topics.py
+    5_Urgency.py
+    6_Summaries.py
+    7_History.py
 ```
 
 ## Page Map
@@ -31,17 +32,17 @@ dashboard/
 | Streamlit page | FastAPI route | Purpose |
 | --- | --- | --- |
 | Home / Start Analysis | `/analysis/review`, `/analysis/csv`, `/analysis/reviews`, `/dashboard/metrics`, `/health` | Start analysis from pasted text, CSV upload, API-style JSON, or future input placeholders. |
-| Sentiment Analysis | `/analysis/review` | Analyze one review and show sentiment in the full saved analysis result. |
-| Topic / Category Analysis | `/analysis/reviews` | Extract review-level topics and top topic counts from multiple reviews. |
-| Urgency / Priority Analysis | `/analysis/reviews` | Show low, medium, and high priority breakdowns and a priority worklist. |
-| GenAI Summary / Insights | `/analysis/reviews` | Show deterministic MVP summaries with placeholders for future GenAI controls. |
-| Overall Dashboard | `/dashboard/metrics` | Show saved-history rollups for sentiment, urgency, topics, and summaries. |
+| Overview | Session state, `/analysis/latest` fallback | Show loaded-run KPIs, charts, topics, and summary. |
+| Review Details | Session state, `/analysis/latest` fallback, `/analysis/runs/{run_id}/reviews/{review_index}` API support | Inspect one analyzed review from the loaded run. |
+| Sentiment | Session state, `/analysis/latest` fallback | Show loaded-run sentiment counts, distribution, and review-level sentiment. |
+| Topics | Session state, `/analysis/latest` fallback | Show loaded-run top topics and review-level categories. |
+| Urgency | Session state, `/analysis/latest` fallback | Show loaded-run urgency counts, average urgency, and most urgent reviews. |
+| Summaries | Session state, `/analysis/latest` fallback | Show loaded-run overall and per-review summaries. |
 | History | `/history` | Show past review analysis runs saved by the backend. |
-| API Health | `/health` | Show backend status, project name, and version for development checks. |
 
-## Shared Sidebar
+## Shared Navigation
 
-Every page should include a sidebar control for the FastAPI backend URL. The default value is:
+Every page should render the shared top navigation bar and hide Streamlit's default sidebar navigation. Home and History expose a collapsible backend URL control. The default value is:
 
 ```text
 http://127.0.0.1:8000
@@ -59,49 +60,59 @@ The home page introduces ReviewInsight as a Customer Review Intelligence Dashboa
 - Saved analysis KPI cards from `/dashboard/metrics`
 - Tabs for typed reviews, CSV upload, API-style JSON payloads, and future input methods
 - The latest analysis result with metrics, charts, summary, and review table
+- Loaded analysis saved in Streamlit session state and backend JSON history
 
-### Sentiment Analysis
+### Overview
+
+The overview page supports:
+
+- Empty state when no reviews are loaded or saved
+- Loaded-run KPIs for total reviews, sentiment, urgency, and priority
+- Sentiment and urgency charts
+- Top topic and summary sections
+
+### Review Details
+
+The review details page supports:
+
+- Empty state when no reviews are loaded or saved
+- A selector for one loaded review
+- Sentiment, topic, urgency, score, full text, summary, and keywords
+
+### Sentiment
 
 The sentiment page supports:
 
-- A single review text area
-- A call to `/analysis/review`
-- Saved result metrics, charts, summary, and analyzed review details
+- Empty state when no reviews are loaded or saved
+- Positive, neutral, and negative counts
+- Sentiment distribution chart
+- Review-level sentiment table
 
-### Topic / Category Analysis
+### Topics
 
 The topic page supports:
 
-- Batch review input with one review per line
-- A call to `/analysis/reviews`
-- Topic bar chart, topic table, review-level categories, and extracted keywords
+- Empty state when no reviews are loaded or saved
+- Top topic chart and table
+- Review-level topics and keywords
 
-### Urgency / Priority Analysis
+### Urgency
 
 The urgency page supports:
 
-- Batch review input with one review per line
-- A call to `/analysis/reviews`
+- Empty state when no reviews are loaded or saved
 - Low, medium, and high priority metrics
-- A priority queue chart and review worklist
+- Average urgency
+- Priority chart and most urgent reviews
 
-### GenAI Summary / Insights
+### Summaries
 
 The summary page supports:
 
-- Batch review input with one review per line
-- A call to `/analysis/reviews`
-- Summary result panel
-- Placeholder controls for future summary length and audience
-
-### Overall Dashboard
-
-The dashboard page supports:
-
-- A call to `/dashboard/metrics`
-- History-level KPIs
-- Sentiment, urgency, and topic charts
-- Recent saved summaries
+- Empty state when no reviews are loaded or saved
+- Loaded-run summary
+- Per-review summaries
+- Placeholders for future GenAI controls
 
 ### History
 
@@ -109,14 +120,6 @@ The history page supports:
 
 - A call to `/history`
 - A table of saved runs with source, review count, sentiment, priority, and summary
-
-### API Health
-
-The health page should support:
-
-- A call to `/health`
-- Status, project, and version display
-- A clear error message if the backend is not reachable
 
 ## Error Handling
 
