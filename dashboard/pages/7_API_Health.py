@@ -1,15 +1,17 @@
 import streamlit as st
 
 from api_client import ApiClientError, fetch_health
-from ui import backend_url_input, configure_page, render_error
+from ui import backend_url_input, configure_page, render_error, render_hero
 
 
 configure_page("API Health")
 
-st.title("API Health")
-st.write("Check whether the FastAPI backend is reachable from Streamlit.")
-
 api_base_url = backend_url_input()
+
+render_hero(
+    "API Health",
+    "Check whether the FastAPI backend is reachable from the Streamlit dashboard.",
+)
 
 if st.button("Check Backend", type="primary"):
     try:

@@ -1,8 +1,8 @@
 # ReviewInsight
 
-ReviewInsight is a beginner-friendly Customer Review Intelligence Dashboard. The goal is to analyze customer reviews and show useful business signals such as sentiment, topic, urgency, and a short summary.
+ReviewInsight is a beginner-friendly Customer Review Intelligence Dashboard. The goal is to analyze customer reviews and show useful business signals such as sentiment, topic, urgency, priority, and a short summary.
 
-This version is a working skeleton. It includes a FastAPI backend and a Streamlit dashboard with placeholder analysis logic. Real machine learning will be added later.
+This version includes a FastAPI backend, local JSON analysis history, and a Streamlit dashboard that calls the backend for analysis flows. Real machine learning and GenAI models can replace the current rule-based services later.
 
 ## Tech Stack
 
@@ -15,6 +15,7 @@ This version is a working skeleton. It includes a FastAPI backend and a Streamli
 - Plotly
 - matplotlib
 - PyTorch
+- Local JSON history storage
 - Optional SQLite later
 
 ## Windows PowerShell Setup
@@ -96,6 +97,18 @@ Analyze a review:
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/analyze -ContentType "application/json" -Body '{"text":"The product is easy to use, but shipping was slow."}'
 ```
 
+Analyze and save a review:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/analysis/review -ContentType "application/json" -Body '{"text":"The product is easy to use, but shipping was slow.","source":"manual"}'
+```
+
+View saved analysis history:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/history
+```
+
 ## Run Streamlit Manually
 
 ```powershell
@@ -106,6 +119,7 @@ streamlit run dashboard\streamlit_app.py
 
 - Project structure exists.
 - Dependencies are listed in `requirements.txt`.
-- FastAPI has `/health` and `/analyze` endpoints.
-- Streamlit has a simple dashboard with review input, placeholder analysis, and a sample chart.
+- FastAPI has `/health`, legacy `/analyze`, full analysis, CSV upload, history, and dashboard metrics endpoints.
+- Streamlit has a product-style analysis homepage plus sentiment, topic, urgency, summary, overall dashboard, history, and API health pages.
+- Analysis history is stored locally in `data/review_history.json`, which is ignored by git.
 - Real ML models are not connected yet.

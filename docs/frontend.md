@@ -13,28 +13,30 @@ This document describes the Streamlit frontend for ReviewInsight. The UI is an a
 
 ```text
 dashboard/
-  streamlit_app.py              # Home / overview page
+  streamlit_app.py              # Home / start analysis page
   api_client.py                 # Shared FastAPI client helpers
   ui.py                         # Shared Streamlit rendering helpers
   pages/
-    1_Review_Input.py
-    2_Sentiment_Analysis.py
-    3_Keyword_Themes.py
-    4_Summarization.py
-    5_Insights_Dashboard.py
-    6_API_Health.py
+    1_Sentiment_Analysis.py
+    2_Topic_Category_Analysis.py
+    3_Urgency_Priority.py
+    4_GenAI_Summary_Insights.py
+    5_Overall_Dashboard.py
+    6_History.py
+    7_API_Health.py
 ```
 
 ## Page Map
 
 | Streamlit page | FastAPI route | Purpose |
 | --- | --- | --- |
-| Home / Overview | `/health` | Show project overview, backend status, and placeholder analysis KPIs. |
-| Review Input | `/reviews`, `/reviews/batch` | Clean and validate single or batch review input. |
-| Sentiment Analysis | `/sentiment` | Analyze one review and show sentiment, score, and placeholder confidence. |
-| Keyword / Themes | `/keywords` | Extract recurring keywords and business themes from multiple reviews. |
-| Summarization | `/summarize` | Summarize one or more reviews. |
-| Insights Dashboard | `/insights` | Show overall sentiment, sentiment distribution, themes, complaints, summary, and action items. |
+| Home / Start Analysis | `/analysis/review`, `/analysis/csv`, `/analysis/reviews`, `/dashboard/metrics`, `/health` | Start analysis from pasted text, CSV upload, API-style JSON, or future input placeholders. |
+| Sentiment Analysis | `/analysis/review` | Analyze one review and show sentiment in the full saved analysis result. |
+| Topic / Category Analysis | `/analysis/reviews` | Extract review-level topics and top topic counts from multiple reviews. |
+| Urgency / Priority Analysis | `/analysis/reviews` | Show low, medium, and high priority breakdowns and a priority worklist. |
+| GenAI Summary / Insights | `/analysis/reviews` | Show deterministic MVP summaries with placeholders for future GenAI controls. |
+| Overall Dashboard | `/dashboard/metrics` | Show saved-history rollups for sentiment, urgency, topics, and summaries. |
+| History | `/history` | Show past review analysis runs saved by the backend. |
 | API Health | `/health` | Show backend status, project name, and version for development checks. |
 
 ## Shared Sidebar
@@ -49,66 +51,64 @@ This keeps local development simple while allowing the user to point Streamlit a
 
 ## Page Details
 
-### Home / Overview
+### Home / Start Analysis
 
-The home page should introduce ReviewInsight as a Customer Review Intelligence Dashboard. It should show:
+The home page introduces ReviewInsight as a Customer Review Intelligence Dashboard and provides the primary input workflow. It shows:
 
 - Backend connection status from `/health`
-- Placeholder KPI cards for total reviews, positive sentiment, top theme, and open action items
-- A short page guide so users know where to go for each analysis task
-
-### Review Input
-
-The review input page should support:
-
-- A single-review form that calls `/reviews`
-- A batch-review form where one review per line calls `/reviews/batch`
-- A table of cleaned reviews returned by the backend
-- A placeholder CSV upload section marked as a future extension
+- Saved analysis KPI cards from `/dashboard/metrics`
+- Tabs for typed reviews, CSV upload, API-style JSON payloads, and future input methods
+- The latest analysis result with metrics, charts, summary, and review table
 
 ### Sentiment Analysis
 
-The sentiment page should support:
+The sentiment page supports:
 
 - A single review text area
-- A call to `/sentiment`
-- Metrics for sentiment and score
-- A placeholder confidence indicator for future ML model output
-- A small explanation that the current logic is rule-based
+- A call to `/analysis/review`
+- Saved result metrics, charts, summary, and analyzed review details
 
-### Keyword / Themes
+### Topic / Category Analysis
 
-The keyword page should support:
+The topic page supports:
 
 - Batch review input with one review per line
-- A call to `/keywords`
-- Keyword frequency table
-- Theme frequency table and bar chart
-- Placeholder section for future topic modeling
+- A call to `/analysis/reviews`
+- Topic bar chart, topic table, review-level categories, and extracted keywords
 
-### Summarization
+### Urgency / Priority Analysis
 
-The summarization page should support:
+The urgency page supports:
 
 - Batch review input with one review per line
-- A call to `/summarize`
+- A call to `/analysis/reviews`
+- Low, medium, and high priority metrics
+- A priority queue chart and review worklist
+
+### GenAI Summary / Insights
+
+The summary page supports:
+
+- Batch review input with one review per line
+- A call to `/analysis/reviews`
 - Summary result panel
-- Review count metric
-- Placeholder controls for future summary length and tone
+- Placeholder controls for future summary length and audience
 
-### Insights Dashboard
+### Overall Dashboard
 
-The insights page is the main business-analysis view. It should support:
+The dashboard page supports:
 
-- Batch review input with one review per line
-- A call to `/insights`
-- Overall sentiment, review count, and action item metrics
-- Sentiment distribution chart
-- Positive themes
-- Negative themes
-- Common complaints
-- Suggested action items
-- Summary panel
+- A call to `/dashboard/metrics`
+- History-level KPIs
+- Sentiment, urgency, and topic charts
+- Recent saved summaries
+
+### History
+
+The history page supports:
+
+- A call to `/history`
+- A table of saved runs with source, review count, sentiment, priority, and summary
 
 ### API Health
 
@@ -132,5 +132,5 @@ The Streamlit frontend should show friendly errors when:
 - Keep API calls in `dashboard/api_client.py`.
 - Keep reusable UI helpers in `dashboard/ui.py`.
 - Keep page files focused on page layout and rendering.
-- Use the existing FastAPI routes; do not add new backend routes for this UI phase.
+- Use FastAPI as the source of analysis logic.
 - Keep placeholders visually present but clearly tied to future project phases.
