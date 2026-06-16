@@ -2,6 +2,7 @@ import unittest
 
 from dashboard.api_client import (
     ApiClientError,
+    analyze_single_review_card,
     analyze_reviews_csv,
     analyze_reviews_from_api_payload,
     analyze_single_review,
@@ -209,6 +210,41 @@ class DashboardApiClientTests(unittest.TestCase):
                 {
                     "url": "http://localhost:8000/analysis/review",
                     "json": {"text": "Great quality", "source": "manual"},
+                    "timeout": 10,
+                }
+            ],
+        )
+
+    def test_analyze_single_review_card_posts_to_api_analyze_single(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        def fake_post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            calls.append({"url": url, "json": json, "timeout": timeout})
+            return FakeResponse(
+                200,
+                {
+                    "text": "Great quality",
+                    "sentiment": "positive",
+                    "topics": [],
+                    "urgency_score": 0.0,
+                    "urgency_label": "low",
+                    "summary": "This review says: Great quality.",
+                },
+            )
+
+        result = analyze_single_review_card(
+            " Great quality ",
+            api_base_url="http://localhost:8000/",
+            post=fake_post,
+        )
+
+        self.assertEqual(result["sentiment"], "positive")
+        self.assertEqual(
+            calls,
+            [
+                {
+                    "url": "http://localhost:8000/api/analyze/single",
+                    "json": {"text": "Great quality"},
                     "timeout": 10,
                 }
             ],

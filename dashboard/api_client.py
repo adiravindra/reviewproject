@@ -80,6 +80,19 @@ def analyze_single_review(
     return _parse_response(response)
 
 
+def analyze_single_review_card(
+    review_text: str,
+    api_base_url: str = DEFAULT_API_BASE_URL,
+    post: PostFunction = requests.post,
+) -> dict[str, Any]:
+    response = post(
+        _api_url(api_base_url, "/api/analyze/single"),
+        json={"text": _clean_review_text(review_text)},
+        timeout=10,
+    )
+    return _parse_response(response)
+
+
 def analyze_reviews_from_api_payload(
     review_texts: list[str],
     api_base_url: str = DEFAULT_API_BASE_URL,
