@@ -14,11 +14,17 @@ from backend.app.schemas.reviews import (
     ReviewCollectionResponse,
     ReviewDetailResponse,
     ReviewInput,
+    SingleReviewStructuredAnalysis,
     SentimentResponse,
     SingleReviewAnalysisRequest,
     SummaryResponse,
 )
-from backend.app.services.analysis import analyze_reviews, estimate_urgency, parse_csv_reviews
+from backend.app.services.analysis import (
+    analyze_reviews,
+    analyze_single_review_text,
+    estimate_urgency,
+    parse_csv_reviews,
+)
 from backend.app.services.history import (
     get_analysis_run,
     get_dashboard_metrics,
@@ -187,3 +193,9 @@ def analyze_review(review: ReviewInput) -> ReviewAnalysis:
         urgency=estimate_urgency(review_text, sentiment),
         summary=summarize_reviews([review_text]),
     )
+
+
+@router.post("/api/analyze/single", response_model=SingleReviewStructuredAnalysis)
+def analyze_single_review_for_frontend(review: ReviewInput) -> SingleReviewStructuredAnalysis:
+    review_text = _prepare_or_422([review.text])[0]
+    return analyze_single_review_text(review_text)

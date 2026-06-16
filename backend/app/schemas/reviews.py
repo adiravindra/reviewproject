@@ -31,6 +31,15 @@ class ReviewAnalysis(BaseModel):
     summary: str
 
 
+class SingleReviewStructuredAnalysis(BaseModel):
+    text: str
+    sentiment: str
+    topics: list[str]
+    urgency_score: float
+    urgency_label: str
+    summary: str
+
+
 class KeywordItem(BaseModel):
     keyword: str
     count: int

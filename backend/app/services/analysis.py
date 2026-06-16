@@ -1,5 +1,6 @@
 import csv
 import io
+import re
 import uuid
 from collections import Counter
 from datetime import UTC, datetime
@@ -9,6 +10,7 @@ from backend.app.schemas.reviews import (
     AnalysisRunResponse,
     KeywordItem,
     ReviewResult,
+    SingleReviewStructuredAnalysis,
 )
 from backend.app.services.insights import build_insights
 from backend.app.services.keywords import extract_keywords, extract_themes
@@ -19,6 +21,106 @@ from backend.app.services.summarization import summarize_reviews
 
 REVIEW_COLUMN_CANDIDATES = {"review", "reviews", "text", "comment", "feedback"}
 URGENCY_SCORE = {"low": 1, "medium": 2, "high": 3}
+
+TOPIC_TERMS = {
+    "pricing": {
+        "billing",
+        "charge",
+        "charged",
+        "cost",
+        "expensive",
+        "invoice",
+        "payment",
+        "price",
+        "pricing",
+        "refund",
+    },
+    "bugs/crashes": {
+        "bug",
+        "buggy",
+        "broken",
+        "crash",
+        "crashed",
+        "crashes",
+        "error",
+        "freeze",
+        "glitch",
+    },
+    "performance": {
+        "lag",
+        "laggy",
+        "load",
+        "loading",
+        "slow",
+        "speed",
+        "timeout",
+    },
+    "UI/UX": {
+        "confusing",
+        "design",
+        "easy",
+        "interface",
+        "layout",
+        "navigation",
+        "screen",
+        "ui",
+        "use",
+        "ux",
+    },
+    "login/auth": {
+        "auth",
+        "authentication",
+        "login",
+        "password",
+        "signin",
+        "sign-in",
+        "signup",
+        "sign-up",
+    },
+    "support": {
+        "agent",
+        "help",
+        "helpful",
+        "response",
+        "respond",
+        "support",
+        "ticket",
+    },
+    "feature request": {
+        "add",
+        "feature",
+        "missing",
+        "option",
+        "please",
+        "request",
+        "wish",
+    },
+}
+TOPIC_PHRASES = {
+    "login/auth": {"log in", "sign in", "sign up"},
+}
+
+HIGH_URGENCY_TERMS = {
+    "broken",
+    "crash",
+    "crashed",
+    "crashes",
+    "failed",
+    "failure",
+    "lost",
+    "payment",
+    "refund",
+    "urgent",
+    "urgently",
+}
+HIGH_URGENCY_PHRASES = {
+    "cannot log in",
+    "can't log in",
+    "lost data",
+    "log in",
+    "payment failed",
+}
+MEDIUM_URGENCY_TERMS = {"bug", "error", "late", "slow", "stuck", "timeout"}
 
 
 def analyze_reviews(review_texts: list[str], source: str = "manual") -> AnalysisRunResponse:
@@ -35,6 +137,26 @@ def analyze_reviews(review_texts: list[str], source: str = "manual") -> Analysis
         summary=summary,
         metrics=_build_metrics(cleaned_reviews, review_results),
         most_urgent_reviews=_most_urgent_reviews(review_results),
+    )
+
+
+def analyze_single_review_text(text: str) -> SingleReviewStructuredAnalysis:
+    sentiment_result = analyze_sentiment(text)
+    topics = _detect_topics(text)
+    urgency_score = _single_review_urgency_score(text, sentiment_result.sentiment)
+    urgency_label = _urgency_label(urgency_score)
+    sentiment = sentiment_result.sentiment
+
+    if sentiment == "neutral" and urgency_score >= 0.5:
+        sentiment = "negative"
+
+    return SingleReviewStructuredAnalysis(
+        text=text,
+        sentiment=sentiment,
+        topics=topics,
+        urgency_score=urgency_score,
+        urgency_label=urgency_label,
+        summary=_one_sentence_summary(text),
     )
 
 
@@ -115,3 +237,49 @@ def _find_review_column(fieldnames: list[str]) -> str:
         if candidate in normalized:
             return normalized[candidate]
     return fieldnames[0]
+
+
+def _tokens(text: str) -> set[str]:
+    return set(re.findall(r"[a-z][a-z-']+", text.casefold()))
+
+
+def _detect_topics(text: str) -> list[str]:
+    words = _tokens(text)
+    normalized_text = " ".join(text.casefold().split())
+    return [
+        topic
+        for topic, terms in TOPIC_TERMS.items()
+        if words & terms or any(
+            phrase in normalized_text for phrase in TOPIC_PHRASES.get(topic, set())
+        )
+    ]
+
+
+def _single_review_urgency_score(text: str, sentiment: str) -> float:
+    words = _tokens(text)
+    normalized_text = " ".join(text.casefold().split())
+    score = 0.0
+
+    score += 0.25 * len(words & HIGH_URGENCY_TERMS)
+    score += 0.2 * sum(1 for phrase in HIGH_URGENCY_PHRASES if phrase in normalized_text)
+    score += 0.1 * len(words & MEDIUM_URGENCY_TERMS)
+
+    if sentiment == "negative":
+        score += 0.15
+
+    return round(min(score, 1.0), 2)
+
+
+def _urgency_label(score: float) -> str:
+    if score >= 0.67:
+        return "high"
+    if score >= 0.34:
+        return "medium"
+    return "low"
+
+
+def _one_sentence_summary(text: str) -> str:
+    summary = summarize_reviews([text])
+    if summary.endswith((".", "!", "?")):
+        return summary
+    return f"{summary}."

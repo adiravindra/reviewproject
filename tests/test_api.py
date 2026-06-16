@@ -127,6 +127,51 @@ class ReviewInsightApiTests(unittest.TestCase):
             {"sentiment", "topic", "urgency", "summary"},
         )
 
+    def test_api_analyze_single_returns_high_urgency_structured_review_result(self) -> None:
+        response = client.post(
+            "/api/analyze/single",
+            json={
+                "text": "The app crashes every time I log in, payment failed, and I urgently need help."
+            },
+        )
+
+        body = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            set(body.keys()),
+            {"text", "sentiment", "topics", "urgency_score", "urgency_label", "summary"},
+        )
+        self.assertEqual(body["text"], "The app crashes every time I log in, payment failed, and I urgently need help.")
+        self.assertEqual(body["sentiment"], "negative")
+        self.assertIn("bugs/crashes", body["topics"])
+        self.assertIn("login/auth", body["topics"])
+        self.assertIn("pricing", body["topics"])
+        self.assertGreaterEqual(body["urgency_score"], 0.67)
+        self.assertLessEqual(body["urgency_score"], 1.0)
+        self.assertEqual(body["urgency_label"], "high")
+        self.assertTrue(body["summary"].endswith("."))
+
+    def test_api_analyze_single_returns_low_urgency_positive_result(self) -> None:
+        response = client.post(
+            "/api/analyze/single",
+            json={"text": "The interface is easy to use and support was helpful."},
+        )
+
+        body = response.json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(body["sentiment"], "positive")
+        self.assertIn("UI/UX", body["topics"])
+        self.assertIn("support", body["topics"])
+        self.assertEqual(body["urgency_label"], "low")
+        self.assertGreaterEqual(body["urgency_score"], 0.0)
+        self.assertLess(body["urgency_score"], 0.34)
+
+    def test_api_analyze_single_rejects_empty_text(self) -> None:
+        response = client.post("/api/analyze/single", json={"text": "   "})
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("At least one non-empty review is required.", response.text)
+
     def test_analysis_review_endpoint_returns_full_analysis_and_saves_history(self) -> None:
         response = client.post(
             "/analysis/review",
