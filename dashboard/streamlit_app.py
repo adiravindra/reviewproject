@@ -4,9 +4,9 @@ import streamlit as st
 
 from api_client import (
     ApiClientError,
+    analyze_single_review_card,
     analyze_reviews_csv,
     analyze_reviews_from_api_payload,
-    analyze_single_review,
     fetch_dashboard_metrics,
     fetch_health,
 )
@@ -18,6 +18,7 @@ from ui import (
     render_error,
     render_hero,
     render_panel,
+    render_single_analysis_card,
     render_status_chips,
     render_top_nav,
     store_latest_analysis,
@@ -81,12 +82,15 @@ with single_tab:
     )
     if st.button("Analyze Review", type="primary", key="home_single"):
         try:
-            result = analyze_single_review(review_text, api_base_url=api_base_url)
+            result = analyze_single_review_card(review_text, api_base_url=api_base_url)
         except ApiClientError as exc:
             render_error(exc)
         else:
-            store_latest_analysis(result)
-            st.success("Review loaded. Explore the analysis pages from the top navigation.")
+            st.session_state["single_review_analysis"] = result
+
+    single_review_analysis = st.session_state.get("single_review_analysis")
+    if isinstance(single_review_analysis, dict):
+        render_single_analysis_card(single_review_analysis)
 
 with csv_tab:
     uploaded_file = st.file_uploader(

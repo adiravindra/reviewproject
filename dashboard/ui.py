@@ -1,4 +1,5 @@
 import json
+from html import escape
 from typing import Any
 
 import streamlit as st
@@ -325,6 +326,24 @@ def topic_rows(top_topics: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def single_analysis_card_fields(result: dict[str, Any]) -> dict[str, str]:
+    topics = result.get("topics", [])
+    topic_labels = [
+        _format_topic_label(str(topic))
+        for topic in topics
+        if str(topic).strip()
+    ]
+
+    return {
+        "text": str(result.get("text", "")),
+        "sentiment": str(result.get("sentiment", "n/a")).title(),
+        "topics": ", ".join(topic_labels) if topic_labels else "No specific topic detected",
+        "urgency_score": f"{float(result.get('urgency_score', 0.0)):.2f}",
+        "urgency_label": str(result.get("urgency_label", "n/a")).title(),
+        "summary": str(result.get("summary", "No summary returned.")),
+    }
+
+
 def render_hero(title: str, body: str) -> None:
     st.markdown(
         f"""
@@ -467,6 +486,39 @@ def render_analysis_result(result: dict[str, Any]) -> None:
         st.dataframe(pd.DataFrame(table_rows), use_container_width=True, hide_index=True)
 
 
+def render_single_analysis_card(result: dict[str, Any]) -> None:
+    fields = single_analysis_card_fields(result)
+    st.markdown(
+        """
+        <div class="ri-panel">
+            <h3>Single Review Result</h3>
+            <p>Immediate structured analysis from the backend.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
+    metric_col1.metric("Sentiment", fields["sentiment"])
+    metric_col2.metric("Urgency", fields["urgency_label"])
+    metric_col3.metric("Urgency Score", fields["urgency_score"])
+    metric_col4.metric("Topics", fields["topics"])
+
+    st.markdown(
+        f"""
+        <div class="ri-panel">
+            <h3>Summary</h3>
+            <p>{escape(fields["summary"])}</p>
+        </div>
+        <div class="ri-panel">
+            <h3>Original Review</h3>
+            <p>{escape(fields["text"])}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_placeholder_panel(title: str, body: str) -> None:
     render_panel(title, body)
 
@@ -486,3 +538,10 @@ def _review_texts_from_list(items: list[Any]) -> list[str]:
     if not review_texts:
         raise ValueError("The API payload did not include any review text.")
     return review_texts
+
+
+def _format_topic_label(topic: str) -> str:
+    return "/".join(
+        part.upper() if part.lower() in {"ui", "ux"} else part.title()
+        for part in topic.split("/")
+    )
