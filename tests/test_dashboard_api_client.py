@@ -2,21 +2,18 @@ import unittest
 
 from dashboard.api_client import (
     ApiClientError,
-    analyze_single_review_card,
     analyze_reviews_csv,
     analyze_reviews_from_api_payload,
     analyze_single_review,
-    fetch_dashboard_metrics,
+    fetch_analysis_run,
+    fetch_analysis_runs,
     fetch_health,
-    fetch_history,
     fetch_keywords,
     fetch_latest_analysis,
     fetch_review_detail,
     fetch_review_insights,
     fetch_sentiment,
     fetch_summary,
-    submit_review_batch,
-    submit_single_review,
 )
 
 
@@ -46,50 +43,6 @@ class DashboardApiClientTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "ok")
         self.assertEqual(calls, [{"url": "http://localhost:8000/health", "timeout": 10}])
-
-    def test_submit_single_review_posts_to_reviews_endpoint(self) -> None:
-        calls: list[dict[str, object]] = []
-
-        def fake_post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
-            calls.append({"url": url, "json": json, "timeout": timeout})
-            return FakeResponse(200, {"count": 1, "reviews": [{"text": "Great product!"}]})
-
-        result = submit_single_review(
-            "  Great product!  ",
-            api_base_url="http://localhost:8000/",
-            post=fake_post,
-        )
-
-        self.assertEqual(result["count"], 1)
-        self.assertEqual(
-            calls,
-            [{"url": "http://localhost:8000/reviews", "json": {"text": "Great product!"}, "timeout": 10}],
-        )
-
-    def test_submit_review_batch_posts_to_reviews_batch_endpoint(self) -> None:
-        calls: list[dict[str, object]] = []
-
-        def fake_post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
-            calls.append({"url": url, "json": json, "timeout": timeout})
-            return FakeResponse(200, {"count": 2, "reviews": [{"text": "Great"}, {"text": "Slow shipping"}]})
-
-        result = submit_review_batch(
-            [" Great ", "", "Slow shipping"],
-            api_base_url="http://localhost:8000/",
-            post=fake_post,
-        )
-
-        self.assertEqual(result["count"], 2)
-        self.assertEqual(
-            calls,
-            [
-                {
-                    "url": "http://localhost:8000/reviews/batch",
-                    "json": {"reviews": [{"text": "Great"}, {"text": "Slow shipping"}]},
-                    "timeout": 10,
-                }
-            ],
-        )
 
     def test_fetch_sentiment_posts_to_sentiment_endpoint(self) -> None:
         calls: list[dict[str, object]] = []
@@ -190,32 +143,7 @@ class DashboardApiClientTests(unittest.TestCase):
         with self.assertRaisesRegex(ApiClientError, "Could not analyze reviews"):
             fetch_review_insights(["Good product"], post=fake_post)
 
-    def test_analyze_single_review_posts_to_analysis_review_endpoint(self) -> None:
-        calls: list[dict[str, object]] = []
-
-        def fake_post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
-            calls.append({"url": url, "json": json, "timeout": timeout})
-            return FakeResponse(200, {"id": "run-1", "review_count": 1, "reviews": [], "metrics": {}})
-
-        result = analyze_single_review(
-            " Great quality ",
-            api_base_url="http://localhost:8000/",
-            post=fake_post,
-        )
-
-        self.assertEqual(result["id"], "run-1")
-        self.assertEqual(
-            calls,
-            [
-                {
-                    "url": "http://localhost:8000/analysis/review",
-                    "json": {"text": "Great quality", "source": "manual"},
-                    "timeout": 10,
-                }
-            ],
-        )
-
-    def test_analyze_single_review_card_posts_to_api_analyze_single(self) -> None:
+    def test_analyze_single_review_posts_to_analysis_single_without_save_by_default(self) -> None:
         calls: list[dict[str, object]] = []
 
         def fake_post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
@@ -229,10 +157,13 @@ class DashboardApiClientTests(unittest.TestCase):
                     "urgency_score": 0.0,
                     "urgency_label": "low",
                     "summary": "This review says: Great quality.",
+                    "saved_to_history": False,
+                    "run_id": None,
+                    "run": None,
                 },
             )
 
-        result = analyze_single_review_card(
+        result = analyze_single_review(
             " Great quality ",
             api_base_url="http://localhost:8000/",
             post=fake_post,
@@ -243,14 +174,45 @@ class DashboardApiClientTests(unittest.TestCase):
             calls,
             [
                 {
-                    "url": "http://localhost:8000/api/analyze/single",
-                    "json": {"text": "Great quality"},
+                    "url": "http://localhost:8000/analysis/single",
+                    "json": {"text": "Great quality", "save_to_history": False},
                     "timeout": 10,
                 }
             ],
         )
 
-    def test_analyze_reviews_from_api_payload_posts_to_analysis_reviews_endpoint(self) -> None:
+    def test_analyze_single_review_can_request_history_save(self) -> None:
+        calls: list[dict[str, object]] = []
+
+        def fake_post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
+            calls.append({"url": url, "json": json, "timeout": timeout})
+            return FakeResponse(
+                200,
+                {
+                    "text": "Great quality",
+                    "sentiment": "positive",
+                    "topics": [],
+                    "urgency_score": 0.0,
+                    "urgency_label": "low",
+                    "summary": "This review says: Great quality.",
+                    "saved_to_history": True,
+                    "run_id": "run-1",
+                    "run": {"id": "run-1"},
+                },
+            )
+
+        result = analyze_single_review(
+            "Great quality",
+            save_to_history=True,
+            api_base_url="http://localhost:8000/",
+            post=fake_post,
+        )
+
+        self.assertEqual(result["run_id"], "run-1")
+        self.assertEqual(calls[0]["url"], "http://localhost:8000/analysis/single")
+        self.assertEqual(calls[0]["json"]["save_to_history"], True)
+
+    def test_analyze_reviews_from_api_payload_posts_to_analysis_batch_endpoint(self) -> None:
         calls: list[dict[str, object]] = []
 
         def fake_post(url: str, json: dict[str, object], timeout: int) -> FakeResponse:
@@ -264,8 +226,8 @@ class DashboardApiClientTests(unittest.TestCase):
         )
 
         self.assertEqual(result["id"], "run-2")
-        self.assertEqual(calls[0]["url"], "http://localhost:8000/analysis/reviews")
-        self.assertEqual(calls[0]["json"]["source"], "api")
+        self.assertEqual(calls[0]["url"], "http://localhost:8000/analysis/batch")
+        self.assertEqual(calls[0]["json"], {"reviews": [{"text": "Helpful support"}, {"text": "Slow shipping"}]})
 
     def test_analyze_reviews_csv_posts_file_to_analysis_csv_endpoint(self) -> None:
         calls: list[dict[str, object]] = []
@@ -285,29 +247,29 @@ class DashboardApiClientTests(unittest.TestCase):
         self.assertEqual(calls[0]["url"], "http://localhost:8000/analysis/csv")
         self.assertEqual(calls[0]["files"]["file"][0], "reviews.csv")
 
-    def test_fetch_history_calls_history_endpoint(self) -> None:
+    def test_fetch_analysis_runs_calls_analysis_runs_endpoint(self) -> None:
         calls: list[dict[str, object]] = []
 
         def fake_get(url: str, timeout: int) -> FakeResponse:
             calls.append({"url": url, "timeout": timeout})
             return FakeResponse(200, {"items": []})
 
-        result = fetch_history(api_base_url="http://localhost:8000/", get=fake_get)
+        result = fetch_analysis_runs(api_base_url="http://localhost:8000/", get=fake_get)
 
         self.assertEqual(result["items"], [])
-        self.assertEqual(calls, [{"url": "http://localhost:8000/history", "timeout": 10}])
+        self.assertEqual(calls, [{"url": "http://localhost:8000/analysis/runs", "timeout": 10}])
 
-    def test_fetch_dashboard_metrics_calls_metrics_endpoint(self) -> None:
+    def test_fetch_analysis_run_calls_run_detail_endpoint(self) -> None:
         calls: list[dict[str, object]] = []
 
         def fake_get(url: str, timeout: int) -> FakeResponse:
             calls.append({"url": url, "timeout": timeout})
-            return FakeResponse(200, {"total_runs": 0, "total_reviews": 0})
+            return FakeResponse(200, {"id": "run-1"})
 
-        result = fetch_dashboard_metrics(api_base_url="http://localhost:8000/", get=fake_get)
+        result = fetch_analysis_run("run-1", api_base_url="http://localhost:8000/", get=fake_get)
 
-        self.assertEqual(result["total_runs"], 0)
-        self.assertEqual(calls, [{"url": "http://localhost:8000/dashboard/metrics", "timeout": 10}])
+        self.assertEqual(result["id"], "run-1")
+        self.assertEqual(calls, [{"url": "http://localhost:8000/analysis/runs/run-1", "timeout": 10}])
 
     def test_fetch_review_detail_calls_run_review_endpoint(self) -> None:
         calls: list[dict[str, object]] = []

@@ -2,32 +2,26 @@ from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 
 from backend.app.schemas.reviews import (
     AnalysisRunResponse,
-    CleanedReview,
-    DashboardMetricsResponse,
     HistoryResponse,
     InsightsResponse,
     KeywordItem,
     KeywordResponse,
-    ReviewAnalysis,
     ReviewBatchAnalysisRequest,
     ReviewBatchInput,
-    ReviewCollectionResponse,
     ReviewDetailResponse,
     ReviewInput,
-    SingleReviewStructuredAnalysis,
     SentimentResponse,
     SingleReviewAnalysisRequest,
+    SingleReviewAnalysisResponse,
     SummaryResponse,
 )
 from backend.app.services.analysis import (
     analyze_reviews,
     analyze_single_review_text,
-    estimate_urgency,
     parse_csv_reviews,
 )
 from backend.app.services.history import (
     get_analysis_run,
-    get_dashboard_metrics,
     get_history,
     get_latest_analysis_run,
     get_review_detail,
@@ -51,23 +45,6 @@ def _prepare_or_422(review_texts: list[str]) -> list[str]:
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(exc),
         ) from exc
-
-
-def _collection_response(review_texts: list[str]) -> ReviewCollectionResponse:
-    reviews = [CleanedReview(text=text) for text in review_texts]
-    return ReviewCollectionResponse(count=len(reviews), reviews=reviews)
-
-
-@router.post("/reviews", response_model=ReviewCollectionResponse)
-def accept_single_review(review: ReviewInput) -> ReviewCollectionResponse:
-    review_texts = _prepare_or_422([review.text])
-    return _collection_response(review_texts)
-
-
-@router.post("/reviews/batch", response_model=ReviewCollectionResponse)
-def accept_multiple_reviews(review_batch: ReviewBatchInput) -> ReviewCollectionResponse:
-    review_texts = _prepare_or_422([review.text for review in review_batch.reviews])
-    return _collection_response(review_texts)
 
 
 @router.post("/sentiment", response_model=SentimentResponse)
@@ -110,18 +87,33 @@ def generate_review_insights(review_batch: ReviewBatchInput) -> InsightsResponse
     return InsightsResponse(**build_insights(review_texts))
 
 
-@router.post("/analysis/review", response_model=AnalysisRunResponse)
-def analyze_single_review(review: SingleReviewAnalysisRequest) -> AnalysisRunResponse:
-    run = analyze_reviews([review.text], source=review.source)
+@router.post("/analysis/single", response_model=SingleReviewAnalysisResponse)
+def analyze_single_review(review: SingleReviewAnalysisRequest) -> SingleReviewAnalysisResponse:
+    review_text = _prepare_or_422([review.text])[0]
+    analysis = analyze_single_review_text(review_text)
+    analysis_payload = _model_to_dict(analysis)
+
+    if not review.save_to_history:
+        return SingleReviewAnalysisResponse(
+            **analysis_payload,
+            saved_to_history=False,
+        )
+
+    run = analyze_reviews([review_text], source="single")
     save_analysis_run(run)
-    return run
+    return SingleReviewAnalysisResponse(
+        **analysis_payload,
+        saved_to_history=True,
+        run_id=run.id,
+        run=run,
+    )
 
 
-@router.post("/analysis/reviews", response_model=AnalysisRunResponse)
+@router.post("/analysis/batch", response_model=AnalysisRunResponse)
 def analyze_review_batch(review_batch: ReviewBatchAnalysisRequest) -> AnalysisRunResponse:
     run = analyze_reviews(
         [review.text for review in review_batch.reviews],
-        source=review_batch.source,
+        source="batch",
     )
     save_analysis_run(run)
     return run
@@ -147,8 +139,8 @@ async def analyze_review_csv(file: UploadFile = File(...)) -> AnalysisRunRespons
     return run
 
 
-@router.get("/history", response_model=HistoryResponse)
-def analysis_history(limit: int = Query(default=25, ge=1, le=100)) -> HistoryResponse:
+@router.get("/analysis/runs", response_model=HistoryResponse)
+def analysis_runs(limit: int = Query(default=25, ge=1, le=100)) -> HistoryResponse:
     return get_history(limit=limit)
 
 
@@ -176,26 +168,7 @@ def analysis_review_detail(run_id: str, review_index: int) -> ReviewDetailRespon
     return detail
 
 
-@router.get("/dashboard/metrics", response_model=DashboardMetricsResponse)
-def dashboard_metrics() -> DashboardMetricsResponse:
-    return get_dashboard_metrics()
-
-
-@router.post("/analyze", response_model=ReviewAnalysis)
-def analyze_review(review: ReviewInput) -> ReviewAnalysis:
-    review_text = _prepare_or_422([review.text])[0]
-    sentiment = analyze_sentiment(review_text).sentiment
-    themes = extract_themes([review_text], limit=1)
-
-    return ReviewAnalysis(
-        sentiment=sentiment,
-        topic=themes[0][0] if themes else "general feedback",
-        urgency=estimate_urgency(review_text, sentiment),
-        summary=summarize_reviews([review_text]),
-    )
-
-
-@router.post("/api/analyze/single", response_model=SingleReviewStructuredAnalysis)
-def analyze_single_review_for_frontend(review: ReviewInput) -> SingleReviewStructuredAnalysis:
-    review_text = _prepare_or_422([review.text])[0]
-    return analyze_single_review_text(review_text)
+def _model_to_dict(model: object) -> dict[str, object]:
+    if hasattr(model, "model_dump"):
+        return model.model_dump()  # type: ignore[no-any-return]
+    return model.dict()  # type: ignore[attr-defined,no-any-return]

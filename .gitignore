@@ -223,3 +223,5 @@ codex/
 
 # ReviewInsight local runtime data
 data/review_history.json
+data/reviewinsight.db
+data/reviewinsight.db-*

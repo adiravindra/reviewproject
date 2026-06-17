@@ -173,7 +173,20 @@ def parse_csv_reviews(contents: bytes) -> list[str]:
 
 
 def estimate_urgency(review_text: str, sentiment: str) -> str:
-    urgent_terms = {"broken", "refund", "terrible", "worst", "urgent", "late"}
+    urgent_terms = {
+        "broken",
+        "crash",
+        "crashed",
+        "crashes",
+        "failed",
+        "payment",
+        "refund",
+        "terrible",
+        "urgent",
+        "urgently",
+        "worst",
+        "late",
+    }
     words = {word.strip(".,!?;:()[]{}\"'").casefold() for word in review_text.split()}
 
     if words & urgent_terms:

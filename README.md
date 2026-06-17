@@ -2,7 +2,7 @@
 
 ReviewInsight is a beginner-friendly Customer Review Intelligence Dashboard. The goal is to analyze customer reviews and show useful business signals such as sentiment, topic, urgency, priority, and a short summary.
 
-This version includes a FastAPI backend, local JSON analysis history, and a Streamlit dashboard that calls the backend for analysis flows. Real machine learning and GenAI models can replace the current rule-based services later.
+This version includes a FastAPI backend, SQLite analysis history, and a Streamlit dashboard that calls the backend for analysis flows. Real machine learning and GenAI models can replace the current rule-based services later.
 
 ## Tech Stack
 
@@ -15,8 +15,7 @@ This version includes a FastAPI backend, local JSON analysis history, and a Stre
 - Plotly
 - matplotlib
 - PyTorch
-- Local JSON history storage
-- Optional SQLite later
+- SQLite history storage
 
 ## Windows PowerShell Setup
 
@@ -91,22 +90,28 @@ Health check:
 Invoke-RestMethod http://127.0.0.1:8000/health
 ```
 
-Analyze a review:
+Analyze one review without saving it:
 
 ```powershell
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/analyze -ContentType "application/json" -Body '{"text":"The product is easy to use, but shipping was slow."}'
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/analysis/single -ContentType "application/json" -Body '{"text":"The product is easy to use, but shipping was slow."}'
 ```
 
 Analyze and save a review:
 
 ```powershell
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/analysis/review -ContentType "application/json" -Body '{"text":"The product is easy to use, but shipping was slow.","source":"manual"}'
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/analysis/single -ContentType "application/json" -Body '{"text":"The product is easy to use, but shipping was slow.","save_to_history":true}'
+```
+
+Analyze and save a JSON batch:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/analysis/batch -ContentType "application/json" -Body '{"reviews":[{"text":"Support was fast."},{"text":"Shipping was slow."}]}'
 ```
 
 View saved analysis history:
 
 ```powershell
-Invoke-RestMethod http://127.0.0.1:8000/history
+Invoke-RestMethod http://127.0.0.1:8000/analysis/runs
 ```
 
 ## Run Streamlit Manually
@@ -119,7 +124,7 @@ streamlit run dashboard\streamlit_app.py
 
 - Project structure exists.
 - Dependencies are listed in `requirements.txt`.
-- FastAPI has `/health`, legacy `/analyze`, full analysis, CSV upload, latest-run, review-detail, history, and dashboard metrics endpoints.
+- FastAPI uses `/analysis/single`, `/analysis/batch`, `/analysis/csv`, `/analysis/runs`, `/analysis/runs/{run_id}`, `/analysis/runs/{run_id}/reviews/{review_index}`, and `/analysis/latest` as the main workflow.
 - Streamlit has a product-style Home/Add Reviews input page plus top-nav Overview, Review Details, Sentiment, Topics, Urgency, Summaries, and History pages that explore the loaded analysis.
-- Analysis history is stored locally in `data/review_history.json`, which is ignored by git.
+- Analysis history is stored locally in SQLite at `data/reviewinsight.db` by default. Override it with `REVIEWINSIGHT_DB_PATH`.
 - Real ML models are not connected yet.

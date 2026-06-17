@@ -9,26 +9,10 @@ class ReviewBatchInput(BaseModel):
     reviews: list[ReviewInput] = Field(..., min_length=1)
 
 
-class CleanedReview(BaseModel):
-    text: str
-
-
-class ReviewCollectionResponse(BaseModel):
-    count: int
-    reviews: list[CleanedReview]
-
-
 class HealthResponse(BaseModel):
     status: str
     project: str
     version: str
-
-
-class ReviewAnalysis(BaseModel):
-    sentiment: str
-    topic: str
-    urgency: str
-    summary: str
 
 
 class SingleReviewStructuredAnalysis(BaseModel):
@@ -46,11 +30,14 @@ class KeywordItem(BaseModel):
 
 
 class SingleReviewAnalysisRequest(ReviewInput):
-    source: str = Field("manual", description="Where this review entered ReviewInsight.")
+    save_to_history: bool = Field(
+        False,
+        description="Whether to persist this single-review analysis as an analysis run.",
+    )
 
 
 class ReviewBatchAnalysisRequest(ReviewBatchInput):
-    source: str = Field("api", description="Where this review batch entered ReviewInsight.")
+    pass
 
 
 class ReviewResult(BaseModel):
@@ -84,6 +71,12 @@ class AnalysisRunResponse(BaseModel):
     most_urgent_reviews: list[ReviewResult]
 
 
+class SingleReviewAnalysisResponse(SingleReviewStructuredAnalysis):
+    saved_to_history: bool
+    run_id: str | None = None
+    run: AnalysisRunResponse | None = None
+
+
 class ReviewDetailResponse(BaseModel):
     run_id: str
     review_index: int
@@ -93,7 +86,7 @@ class ReviewDetailResponse(BaseModel):
 class HistoryItem(BaseModel):
     id: str
     created_at: str
-    source: str
+    input_type: str
     review_count: int
     overall_sentiment: str
     high_priority_reviews: int
@@ -102,15 +95,6 @@ class HistoryItem(BaseModel):
 
 class HistoryResponse(BaseModel):
     items: list[HistoryItem]
-
-
-class DashboardMetricsResponse(BaseModel):
-    total_runs: int
-    total_reviews: int
-    sentiment_breakdown: dict[str, int]
-    urgency_breakdown: dict[str, int]
-    top_topics: list[KeywordItem]
-    recent_summaries: list[str]
 
 
 class SentimentResponse(BaseModel):

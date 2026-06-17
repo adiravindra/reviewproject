@@ -4,10 +4,10 @@ import streamlit as st
 
 from api_client import (
     ApiClientError,
-    analyze_single_review_card,
+    analyze_single_review,
     analyze_reviews_csv,
     analyze_reviews_from_api_payload,
-    fetch_dashboard_metrics,
+    fetch_analysis_runs,
     fetch_health,
 )
 from ui import (
@@ -46,22 +46,18 @@ with status_col:
         st.metric("Backend", str(health["status"]).upper())
 
 try:
-    metrics = fetch_dashboard_metrics(api_base_url=api_base_url)
+    runs = fetch_analysis_runs(api_base_url=api_base_url).get("items", [])
 except ApiClientError:
-    metrics = {
-        "total_reviews": 0,
-        "total_runs": 0,
-        "urgency_breakdown": {"high": 0},
-    }
+    runs = []
 
-metric_col1.metric("Reviews Analyzed", metrics.get("total_reviews", 0))
-metric_col2.metric("Analysis Runs", metrics.get("total_runs", 0))
-metric_col3.metric("High Priority", metrics.get("urgency_breakdown", {}).get("high", 0))
+metric_col1.metric("Reviews Analyzed", sum(int(run.get("review_count", 0)) for run in runs))
+metric_col2.metric("Analysis Runs", len(runs))
+metric_col3.metric("High Priority", sum(int(run.get("high_priority_reviews", 0)) for run in runs))
 
 render_status_chips(
     [
         "FastAPI-backed analysis",
-        "Local JSON history",
+        "SQLite history",
         "CSV-ready workflow",
         "Rule-based MVP services",
     ]
@@ -80,13 +76,22 @@ with single_tab:
         value="The product quality is great, but shipping was late and support was slow.",
         height=170,
     )
+    save_single = st.checkbox("Save this analysis to history", value=False)
     if st.button("Analyze Review", type="primary", key="home_single"):
         try:
-            result = analyze_single_review_card(review_text, api_base_url=api_base_url)
+            result = analyze_single_review(
+                review_text,
+                save_to_history=save_single,
+                api_base_url=api_base_url,
+            )
         except ApiClientError as exc:
             render_error(exc)
         else:
             st.session_state["single_review_analysis"] = result
+            saved_run = result.get("run")
+            if isinstance(saved_run, dict):
+                store_latest_analysis(saved_run)
+                st.success("Review saved to history. Explore it from the dashboard pages.")
 
     single_review_analysis = st.session_state.get("single_review_analysis")
     if isinstance(single_review_analysis, dict):

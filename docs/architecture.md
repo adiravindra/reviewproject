@@ -1,297 +1,206 @@
 # ReviewInsight High-Level Architecture
 
-ReviewInsight is a Customer Review Intelligence Dashboard. It will take review data from a user interface, API request, uploaded file, or sample dataset, then process the text and return useful business insights such as sentiment, topic, urgency, and summaries.
+ReviewInsight is a customer review intelligence dashboard. It accepts customer review text from Streamlit or direct API calls, runs rule-based analysis in FastAPI, stores saved analysis runs in SQLite, and renders saved or selected runs in dashboard pages.
 
-The current project is a working skeleton. The FastAPI backend and Streamlit dashboard are in place with placeholder analysis logic. The data processing, machine learning, GenAI, and storage layers are planned next steps.
+The current project is an MVP. Sentiment, topic, urgency, keyword, insight, and summary logic are deterministic and rule-based. No ML model, GenAI model, LangChain, Ollama, Hugging Face pipeline, or external API is active in the analysis flow.
 
 ## Architecture Diagram
 
 ```text
-┌────────────────────────────┐
-│     Review Data Input      │
-│  CSV Upload / API / Sample │
-└──────────────┬─────────────┘
-               │
-               ▼
-┌────────────────────────────┐
-│        Streamlit UI        │
-│ Upload reviews, view charts│
-└──────────────┬─────────────┘
-               │
-               ▼
-┌────────────────────────────┐
-│      FastAPI Backend       │
-│ API routes + orchestration │
-└──────────────┬─────────────┘
-               │
-               ▼
-┌────────────────────────────┐
-│   Data Processing Layer    │
-│ Clean, validate, deduplicate│
-└──────────────┬─────────────┘
-               │
-               ▼
-┌────────────────────────────────────────────┐
-│            ML / GenAI Pipeline             │
-│                                            │
-│  Sentiment Classifier                      │
-│  Topic / Category Detector                 │
-│  Urgency / Priority Scorer                 │
-│  GenAI Summary Generator                   │
-└──────────────┬─────────────────────────────┘
-               │
-               ▼
-┌────────────────────────────┐
-│       Storage Layer        │
-│ SQLite / CSV / JSON outputs│
-└──────────────┬─────────────┘
-               │
-               ▼
-┌────────────────────────────┐
-│    Dashboard & Insights    │
-│ Sentiment charts, topics,  │
-│ trends, summaries, examples│
-└────────────────────────────┘
+Review Input
+  |-- typed review
+  |-- JSON batch
+  |-- CSV upload
+        |
+        v
+Streamlit Dashboard
+  |-- Home/Add Reviews
+  |-- History
+  |-- analysis pages
+        |
+        v
+FastAPI Backend
+  |-- /analysis/single
+  |-- /analysis/batch
+  |-- /analysis/csv
+  |-- /analysis/runs
+  |-- /analysis/latest
+        |
+        v
+Rule-Based Services
+  |-- processing
+  |-- sentiment
+  |-- keywords/topics
+  |-- urgency
+  |-- summaries
+  |-- insights
+        |
+        v
+SQLite History
+  |-- analysis_runs metadata
+  |-- full analysis JSON payload
+        |
+        v
+Dashboard Views
+  |-- overview
+  |-- review details
+  |-- sentiment
+  |-- topics
+  |-- urgency
+  |-- summaries
 ```
 
 ## Main Components
 
-### 1. Review Data Input
+### Review Input
 
-This is where review text enters the system.
+Review text currently enters the system through:
 
-Planned input options:
+- Typed single review input in Streamlit.
+- API-style JSON payload input in Streamlit.
+- CSV upload in Streamlit.
+- Direct FastAPI requests.
 
-- Manual text entry from the Streamlit dashboard
-- CSV upload with many customer reviews
-- API request to the FastAPI backend
-- Sample review data for demos and testing
+Typed review input uses `/analysis/single`. JSON batches use `/analysis/batch`. CSV uploads use `/analysis/csv`.
 
-Current status:
+### Streamlit UI
 
-- Manual single-review input exists in the Streamlit dashboard.
-- The backend accepts review text through the `/analyze` API route.
-- CSV upload and sample datasets are planned for a future version.
+The Streamlit dashboard lives in `dashboard/`.
 
-### 2. Streamlit UI
+- `streamlit_app.py` is the Home/Add Reviews page.
+- `api_client.py` is the only place that should call FastAPI routes.
+- `ui.py` contains shared layout and rendering helpers.
+- `pages/` contains Overview, Review Details, Sentiment, Topics, Urgency, Summaries, and History.
 
-The Streamlit dashboard is the user-facing part of the project. It should make the review analysis easy to test and explain.
+Home/Add Reviews can run a typed single-review analysis with or without saving. Batch and CSV workflows always save completed runs. History lists saved SQLite runs and can load a selected run into session state for the other dashboard pages.
 
-Responsibilities:
+### FastAPI Backend
 
-- Accept customer review input
-- Later, support CSV uploads
-- Send review text to the backend or run placeholder display logic
-- Show sentiment, topic, urgency, and summary
-- Display charts and simple business insights
+The FastAPI app is created in `backend/app/main.py` and includes:
 
-Current file:
+- `backend/app/routers/health.py`
+- `backend/app/routers/reviews.py`
 
-- `dashboard/streamlit_app.py`
+The main analysis workflow routes are:
 
-Current status:
+- `POST /analysis/single`
+- `POST /analysis/batch`
+- `POST /analysis/csv`
+- `GET /analysis/runs`
+- `GET /analysis/runs/{run_id}`
+- `GET /analysis/runs/{run_id}/reviews/{review_index}`
+- `GET /analysis/latest`
 
-- Shows the title `ReviewInsight Dashboard`
-- Provides a customer review text area
-- Provides an `Analyze Review` button
-- Displays placeholder sentiment, topic, urgency, and summary
-- Displays a sample Plotly chart
+Utility routes still exist for lower-level rule-based outputs:
 
-### 3. FastAPI Backend
+- `POST /sentiment`
+- `POST /keywords`
+- `POST /summarize`
+- `POST /insights`
 
-The FastAPI backend is the API layer for ReviewInsight. It receives review data, coordinates analysis, and returns structured results.
+The older duplicate workflow routes are no longer registered:
 
-Responsibilities:
-
-- Provide API routes for health checks and review analysis
-- Validate incoming request data
-- Call future processing and ML functions
-- Return consistent JSON responses to the frontend
-
-Current file:
-
-- `backend/app/main.py`
-
-Current routes:
-
-- `GET /health`
+- `POST /api/analyze/single`
+- `POST /analysis/review`
+- `POST /analysis/reviews`
 - `POST /analyze`
+- `POST /reviews`
+- `POST /reviews/batch`
+- `GET /history`
+- `GET /dashboard/metrics`
 
-Current `/health` response:
+### Rule-Based Services
 
-```json
-{
-  "status": "ok",
-  "project": "ReviewInsight"
-}
-```
+The backend service layer lives in `backend/app/services/`.
 
-Current `/analyze` response fields:
+- `processing.py` normalizes whitespace, removes empty reviews, and deduplicates reviews case-insensitively.
+- `sentiment.py` classifies sentiment with fixed positive and negative word sets.
+- `keywords.py` extracts keywords, themes, and common complaints with token counts and fixed vocabularies.
+- `summarization.py` returns deterministic summaries.
+- `insights.py` combines sentiment, themes, complaints, summaries, and suggested action items.
+- `analysis.py` orchestrates full analysis runs, single-review structured analysis, CSV parsing, topic detection, urgency scoring, metrics, and most-urgent review selection.
+- `db.py` owns SQLite path resolution, connection creation, and table initialization.
+- `history.py` persists and loads saved analysis runs through SQLite.
 
-- `sentiment`
-- `topic`
-- `urgency`
-- `summary`
+### SQLite Storage
 
-Current status:
-
-- The route exists and returns placeholder values.
-- No real ML model is connected yet.
-
-### 4. Data Processing Layer
-
-The data processing layer will prepare raw review text before it reaches the ML or GenAI pipeline.
-
-Planned responsibilities:
-
-- Remove empty reviews
-- Trim extra whitespace
-- Normalize text where useful
-- Validate required fields
-- Deduplicate repeated reviews
-- Prepare batches of reviews from CSV uploads
-
-Example processing steps:
-
-1. Receive raw review text.
-2. Check that the text is not empty.
-3. Clean extra spaces and line breaks.
-4. Remove duplicate rows if analyzing a CSV file.
-5. Pass cleaned review data to the ML pipeline.
-
-Current status:
-
-- Basic whitespace trimming exists in the `/analyze` route.
-- A separate processing module has not been added yet.
-
-### 5. ML / GenAI Pipeline
-
-This layer will eventually produce the core intelligence in ReviewInsight.
-
-Planned modules:
-
-- Sentiment Classifier
-- Topic / Category Detector
-- Urgency / Priority Scorer
-- GenAI Summary Generator
-
-Planned responsibilities:
-
-- Classify reviews as positive, neutral, or negative
-- Detect common topics such as shipping, product quality, price, support, or usability
-- Score urgency based on complaint severity or business importance
-- Generate short summaries for individual reviews or groups of reviews
-
-Possible tools:
-
-- Hugging Face Transformers for sentiment or summarization
-- scikit-learn for simple topic or category models
-- pandas for batch analysis
-- PyTorch as the deep learning backend
-
-Current status:
-
-- No real ML or GenAI model is active yet.
-- The API and dashboard return placeholder values so the application flow can be tested first.
-
-### 6. Storage Layer
-
-The storage layer will keep input reviews and analysis results.
-
-Possible storage options:
-
-- SQLite database for local structured storage
-- CSV files for exports
-- JSON files for API-style output or saved analysis results
-
-Planned stored fields:
-
-- Review text
-- Sentiment
-- Topic
-- Urgency
-- Summary
-- Created timestamp
-- Source, such as manual input, CSV upload, or API
-
-Current status:
-
-- Storage is not implemented yet.
-- The app currently returns analysis results directly without saving them.
-
-### 7. Dashboard & Insights
-
-This is the final output layer where users understand the review data.
-
-Planned insights:
-
-- Sentiment distribution chart
-- Topic/category counts
-- Urgency breakdown
-- Review trends over time
-- Example positive and negative reviews
-- Short summaries of customer pain points
-
-Current status:
-
-- A sample sentiment chart exists in Streamlit.
-- Real dashboard insights will be added after the ML and storage layers are built.
-
-## Current Request Flow
-
-The current single-review flow works like this:
-
-1. A user enters review text in the Streamlit dashboard.
-2. The dashboard displays placeholder analysis results.
-3. The FastAPI backend can also receive review text through `POST /analyze`.
-4. The backend returns placeholder sentiment, topic, urgency, and summary.
-
-The future flow will connect Streamlit to FastAPI directly, then FastAPI will call the processing and ML layers before returning results.
-
-## Planned Future Flow
+Saved analysis runs are stored in SQLite at:
 
 ```text
-User enters or uploads reviews
-        │
-        ▼
-Streamlit sends data to FastAPI
-        │
-        ▼
-FastAPI validates request
-        │
-        ▼
-Data processing cleans and prepares reviews
-        │
-        ▼
-ML / GenAI pipeline analyzes reviews
-        │
-        ▼
-Results are saved to SQLite, CSV, or JSON
-        │
-        ▼
-Streamlit displays charts and insights
+data/reviewinsight.db
 ```
 
-## Project Status
+The path can be overridden with:
+
+```text
+REVIEWINSIGHT_DB_PATH
+```
+
+The database is created automatically when missing. The `analysis_runs` table stores:
+
+- `id`
+- `created_at`
+- `input_type`
+- `review_count`
+- `sentiment_counts_json`
+- `topic_counts_json`
+- `urgency_counts_json`
+- `average_urgency`
+- `overall_summary`
+- `payload_json`
+
+For the MVP, the detailed `AnalysisRunResponse` is stored as JSON text in `payload_json`.
+
+## Current Data Flow
+
+```text
+Typed review
+  -> Streamlit checkbox chooses save_to_history
+  -> POST /analysis/single
+  -> FastAPI cleans and analyzes one review
+  -> if save_to_history is false, returns single-review result only
+  -> if save_to_history is true, saves a SQLite run and returns run_id plus run payload
+
+JSON batch
+  -> Streamlit parses review texts
+  -> POST /analysis/batch
+  -> FastAPI analyzes the batch
+  -> SQLite stores the completed run
+  -> Streamlit loads the returned run into dashboard session state
+
+CSV upload
+  -> Streamlit uploads file
+  -> POST /analysis/csv
+  -> FastAPI extracts review text from a review/text/comment/feedback column or first column
+  -> SQLite stores the completed run
+  -> Streamlit loads the returned run into dashboard session state
+
+Dashboard
+  -> pages read selected run from session state
+  -> if no run is selected, pages try GET /analysis/latest
+
+History
+  -> GET /analysis/runs lists saved runs
+  -> GET /analysis/runs/{run_id} loads the selected saved run
+```
+
+## Current Status
 
 Completed:
 
-- Basic project structure
-- FastAPI app skeleton
-- `/health` route
-- `/analyze` route with placeholder response
-- Streamlit dashboard skeleton
-- Manual review text input
-- Placeholder analysis output
-- Sample Plotly chart
+- FastAPI app and routers.
+- Standardized analysis workflow routes.
+- SQLite-backed history storage.
+- Rule-based single, batch, and CSV analysis.
+- Streamlit Home/Add Reviews workflow.
+- Streamlit dashboard pages for loaded or latest saved runs.
+- History page with saved-run loading.
+- Unit tests for routes, SQLite save/load/list behavior, dashboard client calls, UI helpers, scripts, and Streamlit import context.
 
-Planned next steps:
+Remaining:
 
-- Connect Streamlit to the FastAPI `/analyze` endpoint
-- Add CSV upload support
-- Move text cleaning into a separate processing module
-- Add real sentiment classification
-- Add topic/category detection
-- Add urgency scoring
-- Add optional SQLite storage
-- Build richer dashboard charts and filters
+- Real ML or GenAI models are not connected.
+- CSV upload has no column preview or metadata mapping UI.
+- Saved runs cannot be deleted, renamed, filtered, or exported.
+- There are no browser-level Streamlit UI tests.
+- There is no database migration system because the SQLite schema is still MVP-sized.

@@ -1,14 +1,16 @@
 # ReviewInsight Frontend Design
 
-This document describes the Streamlit frontend for ReviewInsight. The UI is an analysis workspace that maps to the FastAPI routes instead of a single prompt-style page.
+This document describes the Streamlit frontend for ReviewInsight. The UI is an analysis workspace that uses the standardized FastAPI analysis workflow and SQLite-backed saved runs.
 
 ## Frontend Goals
 
-- Give each major backend capability its own Streamlit page.
-- Make the app feel like a review analysis dashboard, not a generic text prompt.
+- Keep FastAPI as the source of analysis logic.
 - Keep Home/Add Reviews as the only review input surface.
-- Keep FastAPI as the source of analysis logic. Streamlit should collect inputs, call the API, and render results.
-- Let the other pages explore the loaded analysis from Streamlit session state or backend history.
+- Use `/analysis/single` for typed reviews, with optional history saving.
+- Use `/analysis/batch` for API-style JSON review batches.
+- Use `/analysis/csv` for CSV uploads.
+- Let dashboard pages explore a selected analysis run from Streamlit session state or fall back to `/analysis/latest`.
+- Let History list SQLite saved runs from `/analysis/runs` and load one selected run into the workspace.
 
 ## App Structure
 
@@ -31,109 +33,66 @@ dashboard/
 
 | Streamlit page | FastAPI route | Purpose |
 | --- | --- | --- |
-| Home / Start Analysis | `/analysis/review`, `/analysis/csv`, `/analysis/reviews`, `/dashboard/metrics`, `/health` | Start analysis from pasted text, CSV upload, API-style JSON, or future input placeholders. |
+| Home / Start Analysis | `/health`, `/analysis/runs`, `/analysis/single`, `/analysis/batch`, `/analysis/csv` | Start analysis from pasted text, CSV upload, API-style JSON, or future input placeholders. |
 | Overview | Session state, `/analysis/latest` fallback | Show loaded-run KPIs, charts, topics, and summary. |
-| Review Details | Session state, `/analysis/latest` fallback, `/analysis/runs/{run_id}/reviews/{review_index}` API support | Inspect one analyzed review from the loaded run. |
+| Review Details | Session state, `/analysis/latest` fallback | Inspect one analyzed review from the loaded run. |
 | Sentiment | Session state, `/analysis/latest` fallback | Show loaded-run sentiment counts, distribution, and review-level sentiment. |
 | Topics | Session state, `/analysis/latest` fallback | Show loaded-run top topics and review-level categories. |
 | Urgency | Session state, `/analysis/latest` fallback | Show loaded-run urgency counts, average urgency, and most urgent reviews. |
 | Summaries | Session state, `/analysis/latest` fallback | Show loaded-run overall and per-review summaries. |
-| History | `/history` | Show past review analysis runs saved by the backend. |
+| History | `/analysis/runs`, `/analysis/runs/{run_id}` | Show SQLite saved runs and load one selected run into the workspace. |
 
 ## Shared Navigation
 
-Every page should render the shared top navigation bar and hide Streamlit's default sidebar navigation. Home and History expose a collapsible backend URL control. The default value is:
+Every page renders the shared top navigation bar and hides Streamlit's default sidebar navigation. Home and History expose a collapsible backend URL control. The default value is:
 
 ```text
 http://127.0.0.1:8000
 ```
 
-This keeps local development simple while allowing the user to point Streamlit at a different backend later.
+## Current Workflow
+
+```text
+Typed review -> /analysis/single -> optional SQLite history
+JSON batch -> /analysis/batch -> saved SQLite run
+CSV upload -> /analysis/csv -> saved SQLite run
+Dashboard pages -> selected run in session state or /analysis/latest
+History -> /analysis/runs -> optional load from /analysis/runs/{run_id}
+```
 
 ## Page Details
 
 ### Home / Start Analysis
 
-The home page introduces ReviewInsight as a Customer Review Intelligence Dashboard and provides the primary input workflow. It shows:
+The home page shows backend status, saved-run counts, and tabs for the available input workflows.
 
-- Backend connection status from `/health`
-- Saved analysis KPI cards from `/dashboard/metrics`
-- Tabs for typed reviews, CSV upload, API-style JSON payloads, and future input methods
-- The latest analysis result with metrics, charts, summary, and review table
-- Loaded analysis saved in Streamlit session state and backend JSON history
+- The typed review tab calls `/analysis/single`.
+- A "Save this analysis to history" checkbox controls the `save_to_history` request field.
+- Unsaved typed results render as a single-review card only.
+- Saved typed results also place the returned analysis run into the dashboard workspace.
+- CSV uploads call `/analysis/csv`, save a run, and place it into the workspace.
+- API-style JSON payloads call `/analysis/batch`, save a run, and place it into the workspace.
 
-### Overview
+### Dashboard Pages
 
-The overview page supports:
-
-- Empty state when no reviews are loaded or saved
-- Loaded-run KPIs for total reviews, sentiment, urgency, and priority
-- Sentiment and urgency charts
-- Top topic and summary sections
-
-### Review Details
-
-The review details page supports:
-
-- Empty state when no reviews are loaded or saved
-- A selector for one loaded review
-- Sentiment, topic, urgency, score, full text, summary, and keywords
-
-### Sentiment
-
-The sentiment page supports:
-
-- Empty state when no reviews are loaded or saved
-- Positive, neutral, and negative counts
-- Sentiment distribution chart
-- Review-level sentiment table
-
-### Topics
-
-The topic page supports:
-
-- Empty state when no reviews are loaded or saved
-- Top topic chart and table
-- Review-level topics and keywords
-
-### Urgency
-
-The urgency page supports:
-
-- Empty state when no reviews are loaded or saved
-- Low, medium, and high priority metrics
-- Average urgency
-- Priority chart and most urgent reviews
-
-### Summaries
-
-The summary page supports:
-
-- Empty state when no reviews are loaded or saved
-- Loaded-run summary
-- Per-review summaries
-- Placeholders for future GenAI controls
+Overview, Review Details, Sentiment, Topics, Urgency, and Summaries read the loaded analysis from `st.session_state["latest_analysis"]`. If no run is loaded, `workspace_analysis()` tries `/analysis/latest`.
 
 ### History
 
-The history page supports:
-
-- A call to `/history`
-- A table of saved runs with source, review count, sentiment, priority, and summary
+The History page calls `/analysis/runs` to list saved SQLite runs. The user can select one saved run, load it through `/analysis/runs/{run_id}`, and then explore that run from the other dashboard pages.
 
 ## Error Handling
 
-The Streamlit frontend should show friendly errors when:
+The Streamlit frontend shows friendly errors when:
 
-- The user submits empty review input
-- FastAPI is not running
-- The backend returns an error response
-- The backend returns invalid JSON
+- The user submits empty review input.
+- FastAPI is not running.
+- The backend returns an error response.
+- The backend returns invalid JSON.
 
 ## Implementation Notes
 
 - Keep API calls in `dashboard/api_client.py`.
 - Keep reusable UI helpers in `dashboard/ui.py`.
 - Keep page files focused on page layout and rendering.
-- Use FastAPI as the source of analysis logic.
-- Keep placeholders visually present but clearly tied to future project phases.
+- Keep placeholders visually present but tied to future project phases.

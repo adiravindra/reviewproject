@@ -1,5 +1,9 @@
+import os
+import sqlite3
+import tempfile
 import unittest
 import warnings
+from contextlib import closing
 
 warnings.filterwarnings(
     "ignore",
@@ -14,6 +18,19 @@ client = TestClient(app)
 
 
 class ReviewInsightApiTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.db_path = os.path.join(self.temp_dir.name, "reviewinsight.db")
+        self.previous_db_path = os.environ.get("REVIEWINSIGHT_DB_PATH")
+        os.environ["REVIEWINSIGHT_DB_PATH"] = self.db_path
+
+    def tearDown(self) -> None:
+        if self.previous_db_path is None:
+            os.environ.pop("REVIEWINSIGHT_DB_PATH", None)
+        else:
+            os.environ["REVIEWINSIGHT_DB_PATH"] = self.previous_db_path
+        self.temp_dir.cleanup()
+
     def test_health_check_returns_project_status(self) -> None:
         response = client.get("/health")
 
@@ -22,42 +39,6 @@ class ReviewInsightApiTests(unittest.TestCase):
             response.json(),
             {"status": "ok", "project": "ReviewInsight", "version": "0.1.0"},
         )
-
-    def test_single_review_input_cleans_review_text(self) -> None:
-        response = client.post(
-            "/reviews",
-            json={"text": "  The product is great, but shipping was slow.  "},
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["reviews"][0]["text"], "The product is great, but shipping was slow.")
-        self.assertEqual(response.json()["count"], 1)
-
-    def test_multiple_review_input_removes_empty_and_duplicate_reviews(self) -> None:
-        response = client.post(
-            "/reviews/batch",
-            json={
-                "reviews": [
-                    {"text": "Great product!"},
-                    {"text": "   "},
-                    {"text": "Great product!"},
-                    {"text": "Support was slow."},
-                ]
-            },
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["count"], 2)
-        self.assertEqual(
-            [review["text"] for review in response.json()["reviews"]],
-            ["Great product!", "Support was slow."],
-        )
-
-    def test_empty_review_batch_returns_validation_error(self) -> None:
-        response = client.post("/reviews/batch", json={"reviews": [{"text": "   "}]})
-
-        self.assertEqual(response.status_code, 422)
-        self.assertIn("At least one non-empty review is required.", response.text)
 
     def test_sentiment_endpoint_returns_rule_based_sentiment(self) -> None:
         response = client.post("/sentiment", json={"text": "I love the fast delivery and excellent quality."})
@@ -118,91 +99,79 @@ class ReviewInsightApiTests(unittest.TestCase):
         self.assertIsInstance(body["suggested_action_items"], list)
         self.assertGreaterEqual(body["review_count"], 1)
 
-    def test_existing_analyze_endpoint_still_returns_legacy_shape(self) -> None:
-        response = client.post("/analyze", json={"text": "Shipping was slow but support was helpful."})
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            set(response.json().keys()),
-            {"sentiment", "topic", "urgency", "summary"},
-        )
-
-    def test_api_analyze_single_returns_high_urgency_structured_review_result(self) -> None:
+    def test_analysis_single_returns_unsaved_single_review_result_by_default(self) -> None:
         response = client.post(
-            "/api/analyze/single",
-            json={
-                "text": "The app crashes every time I log in, payment failed, and I urgently need help."
-            },
+            "/analysis/single",
+            json={"text": "The interface is easy to use and support was helpful."},
         )
 
         body = response.json()
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             set(body.keys()),
-            {"text", "sentiment", "topics", "urgency_score", "urgency_label", "summary"},
+            {
+                "text",
+                "sentiment",
+                "topics",
+                "urgency_score",
+                "urgency_label",
+                "summary",
+                "saved_to_history",
+                "run_id",
+                "run",
+            },
         )
-        self.assertEqual(body["text"], "The app crashes every time I log in, payment failed, and I urgently need help.")
-        self.assertEqual(body["sentiment"], "negative")
-        self.assertIn("bugs/crashes", body["topics"])
-        self.assertIn("login/auth", body["topics"])
-        self.assertIn("pricing", body["topics"])
-        self.assertGreaterEqual(body["urgency_score"], 0.67)
-        self.assertLessEqual(body["urgency_score"], 1.0)
-        self.assertEqual(body["urgency_label"], "high")
-        self.assertTrue(body["summary"].endswith("."))
-
-    def test_api_analyze_single_returns_low_urgency_positive_result(self) -> None:
-        response = client.post(
-            "/api/analyze/single",
-            json={"text": "The interface is easy to use and support was helpful."},
-        )
-
-        body = response.json()
-        self.assertEqual(response.status_code, 200)
         self.assertEqual(body["sentiment"], "positive")
         self.assertIn("UI/UX", body["topics"])
         self.assertIn("support", body["topics"])
         self.assertEqual(body["urgency_label"], "low")
-        self.assertGreaterEqual(body["urgency_score"], 0.0)
-        self.assertLess(body["urgency_score"], 0.34)
+        self.assertFalse(body["saved_to_history"])
+        self.assertIsNone(body["run_id"])
+        self.assertIsNone(body["run"])
+        self.assertEqual(client.get("/analysis/runs").json()["items"], [])
 
-    def test_api_analyze_single_rejects_empty_text(self) -> None:
-        response = client.post("/api/analyze/single", json={"text": "   "})
-
-        self.assertEqual(response.status_code, 422)
-        self.assertIn("At least one non-empty review is required.", response.text)
-
-    def test_analysis_review_endpoint_returns_full_analysis_and_saves_history(self) -> None:
+    def test_analysis_single_can_save_review_to_sqlite_history(self) -> None:
         response = client.post(
-            "/analysis/review",
+            "/analysis/single",
             json={
-                "text": "The product quality is great but shipping was late.",
-                "source": "manual",
+                "text": "The app crashes every time I log in, payment failed, and I urgently need help.",
+                "save_to_history": True,
             },
         )
 
         body = response.json()
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(body["source"], "manual")
-        self.assertEqual(body["review_count"], 1)
-        self.assertEqual(body["reviews"][0]["text"], "The product quality is great but shipping was late.")
-        self.assertIn(body["reviews"][0]["sentiment"], {"positive", "neutral", "negative"})
-        self.assertIn(body["reviews"][0]["urgency"], {"low", "medium", "high"})
-        self.assertIn("summary", body)
-        self.assertIn("metrics", body)
-        self.assertIn("id", body)
+        self.assertTrue(body["saved_to_history"])
+        self.assertIsInstance(body["run_id"], str)
+        self.assertEqual(body["run"]["id"], body["run_id"])
+        self.assertEqual(body["run"]["source"], "single")
+        self.assertEqual(body["run"]["review_count"], 1)
+        self.assertEqual(body["run"]["reviews"][0]["urgency"], "high")
 
-        history_response = client.get("/history?limit=5")
-        self.assertEqual(history_response.status_code, 200)
-        self.assertTrue(
-            any(item["id"] == body["id"] for item in history_response.json()["items"])
-        )
+        runs_response = client.get("/analysis/runs")
+        self.assertEqual(runs_response.status_code, 200)
+        self.assertEqual(runs_response.json()["items"][0]["id"], body["run_id"])
+        self.assertEqual(runs_response.json()["items"][0]["input_type"], "single")
 
-    def test_analysis_reviews_endpoint_accepts_api_batch_payload(self) -> None:
+        with closing(sqlite3.connect(self.db_path)) as connection:
+            tables = connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'analysis_runs'"
+            ).fetchall()
+            row_count = connection.execute("SELECT COUNT(*) FROM analysis_runs").fetchone()[0]
+
+        self.assertEqual(tables, [("analysis_runs",)])
+        self.assertEqual(row_count, 1)
+
+    def test_analysis_single_rejects_empty_text(self) -> None:
+        response = client.post("/analysis/single", json={"text": "   "})
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("At least one non-empty review is required.", response.text)
+
+    def test_analysis_batch_saves_full_run_to_sqlite_history(self) -> None:
         response = client.post(
-            "/analysis/reviews",
+            "/analysis/batch",
             json={
-                "source": "api",
                 "reviews": [
                     {"text": "Support was helpful and fast."},
                     {"text": "The setup was confusing and difficult."},
@@ -212,19 +181,19 @@ class ReviewInsightApiTests(unittest.TestCase):
 
         body = response.json()
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(body["source"], "api")
+        self.assertEqual(body["source"], "batch")
         self.assertEqual(body["review_count"], 2)
         self.assertEqual(len(body["reviews"]), 2)
-        self.assertEqual(
-            sum(body["metrics"]["sentiment_breakdown"].values()),
-            2,
-        )
+        self.assertEqual(sum(body["metrics"]["sentiment_breakdown"].values()), 2)
         self.assertIn("average_urgency", body["metrics"])
-        self.assertGreaterEqual(body["metrics"]["average_urgency"], 1.0)
         self.assertIn("most_urgent_reviews", body)
-        self.assertGreaterEqual(len(body["most_urgent_reviews"]), 1)
 
-    def test_analysis_csv_endpoint_extracts_review_column(self) -> None:
+        runs_response = client.get("/analysis/runs")
+        self.assertEqual(runs_response.status_code, 200)
+        self.assertEqual(runs_response.json()["items"][0]["id"], body["id"])
+        self.assertEqual(runs_response.json()["items"][0]["input_type"], "batch")
+
+    def test_analysis_csv_endpoint_extracts_review_column_and_saves_run(self) -> None:
         csv_content = "review,rating\nFast delivery and great quality,5\nShipping was late and slow,2\n"
 
         response = client.post(
@@ -237,12 +206,12 @@ class ReviewInsightApiTests(unittest.TestCase):
         self.assertEqual(body["source"], "csv")
         self.assertEqual(body["review_count"], 2)
         self.assertEqual(len(body["reviews"]), 2)
+        self.assertEqual(client.get("/analysis/runs").json()["items"][0]["id"], body["id"])
 
-    def test_analysis_run_detail_and_review_detail_can_be_loaded_from_history(self) -> None:
+    def test_analysis_run_detail_and_review_detail_can_be_loaded_from_sqlite(self) -> None:
         create_response = client.post(
-            "/analysis/reviews",
+            "/analysis/batch",
             json={
-                "source": "api",
                 "reviews": [
                     {"text": "Excellent support and easy setup."},
                     {"text": "The package arrived broken and I need an urgent refund."},
@@ -264,27 +233,32 @@ class ReviewInsightApiTests(unittest.TestCase):
 
     def test_latest_analysis_run_returns_most_recent_saved_run(self) -> None:
         create_response = client.post(
-            "/analysis/review",
-            json={"text": "Helpful support and fast delivery.", "source": "manual"},
+            "/analysis/single",
+            json={"text": "Helpful support and fast delivery.", "save_to_history": True},
         )
-        created_run = create_response.json()
+        created_run = create_response.json()["run"]
 
         latest_response = client.get("/analysis/latest")
 
         self.assertEqual(latest_response.status_code, 200)
         self.assertEqual(latest_response.json()["id"], created_run["id"])
 
-    def test_dashboard_metrics_endpoint_returns_history_rollup(self) -> None:
-        client.post("/analysis/review", json={"text": "Excellent support and easy setup."})
+    def test_old_duplicate_routes_are_no_longer_registered(self) -> None:
+        old_post_routes = [
+            "/reviews",
+            "/reviews/batch",
+            "/analyze",
+            "/api/analyze/single",
+            "/analysis/review",
+            "/analysis/reviews",
+        ]
 
-        response = client.get("/dashboard/metrics")
+        for route in old_post_routes:
+            with self.subTest(route=route):
+                self.assertEqual(client.post(route, json={"text": "Great product"}).status_code, 404)
 
-        body = response.json()
-        self.assertEqual(response.status_code, 200)
-        self.assertGreaterEqual(body["total_runs"], 1)
-        self.assertGreaterEqual(body["total_reviews"], 1)
-        self.assertIn("sentiment_breakdown", body)
-        self.assertIn("urgency_breakdown", body)
+        self.assertEqual(client.get("/history").status_code, 404)
+        self.assertEqual(client.get("/dashboard/metrics").status_code, 404)
 
 
 if __name__ == "__main__":

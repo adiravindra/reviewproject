@@ -69,25 +69,16 @@ def fetch_health(
 
 def analyze_single_review(
     review_text: str,
+    save_to_history: bool = False,
     api_base_url: str = DEFAULT_API_BASE_URL,
     post: PostFunction = requests.post,
 ) -> dict[str, Any]:
     response = post(
-        _api_url(api_base_url, "/analysis/review"),
-        json={"text": _clean_review_text(review_text), "source": "manual"},
-        timeout=10,
-    )
-    return _parse_response(response)
-
-
-def analyze_single_review_card(
-    review_text: str,
-    api_base_url: str = DEFAULT_API_BASE_URL,
-    post: PostFunction = requests.post,
-) -> dict[str, Any]:
-    response = post(
-        _api_url(api_base_url, "/api/analyze/single"),
-        json={"text": _clean_review_text(review_text)},
+        _api_url(api_base_url, "/analysis/single"),
+        json={
+            "text": _clean_review_text(review_text),
+            "save_to_history": save_to_history,
+        },
         timeout=10,
     )
     return _parse_response(response)
@@ -99,9 +90,8 @@ def analyze_reviews_from_api_payload(
     post: PostFunction = requests.post,
 ) -> dict[str, Any]:
     payload = _review_payload(review_texts)
-    payload["source"] = "api"
     response = post(
-        _api_url(api_base_url, "/analysis/reviews"),
+        _api_url(api_base_url, "/analysis/batch"),
         json=payload,
         timeout=10,
     )
@@ -125,26 +115,27 @@ def analyze_reviews_csv(
     return _parse_response(response)
 
 
-def fetch_history(
+def fetch_analysis_runs(
     api_base_url: str = DEFAULT_API_BASE_URL,
     get: GetFunction = requests.get,
 ) -> dict[str, Any]:
     try:
-        response = get(_api_url(api_base_url, "/history"), timeout=10)
+        response = get(_api_url(api_base_url, "/analysis/runs"), timeout=10)
     except Exception as exc:
         raise ApiClientError("Could not load analysis history from the backend.") from exc
 
     return _parse_response(response)
 
 
-def fetch_dashboard_metrics(
+def fetch_analysis_run(
+    run_id: str,
     api_base_url: str = DEFAULT_API_BASE_URL,
     get: GetFunction = requests.get,
 ) -> dict[str, Any]:
     try:
-        response = get(_api_url(api_base_url, "/dashboard/metrics"), timeout=10)
+        response = get(_api_url(api_base_url, f"/analysis/runs/{run_id}"), timeout=10)
     except Exception as exc:
-        raise ApiClientError("Could not load dashboard metrics from the backend.") from exc
+        raise ApiClientError("Could not load analysis run from the backend.") from exc
 
     return _parse_response(response)
 
@@ -175,32 +166,6 @@ def fetch_review_detail(
     except Exception as exc:
         raise ApiClientError("Could not load review details from the backend.") from exc
 
-    return _parse_response(response)
-
-
-def submit_single_review(
-    review_text: str,
-    api_base_url: str = DEFAULT_API_BASE_URL,
-    post: PostFunction = requests.post,
-) -> dict[str, Any]:
-    response = post(
-        _api_url(api_base_url, "/reviews"),
-        json={"text": _clean_review_text(review_text)},
-        timeout=10,
-    )
-    return _parse_response(response)
-
-
-def submit_review_batch(
-    review_texts: list[str],
-    api_base_url: str = DEFAULT_API_BASE_URL,
-    post: PostFunction = requests.post,
-) -> dict[str, Any]:
-    response = post(
-        _api_url(api_base_url, "/reviews/batch"),
-        json=_review_payload(review_texts),
-        timeout=10,
-    )
     return _parse_response(response)
 
 

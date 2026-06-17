@@ -1,57 +1,100 @@
 import json
-import os
-from collections import Counter
-from pathlib import Path
+from contextlib import closing
 from typing import Any
 
 from backend.app.schemas.reviews import (
     AnalysisRunResponse,
-    DashboardMetricsResponse,
     HistoryItem,
     HistoryResponse,
-    KeywordItem,
     ReviewDetailResponse,
 )
-
-
-DEFAULT_HISTORY_PATH = Path("data/review_history.json")
+from backend.app.services.db import connect
 
 
 def save_analysis_run(run: AnalysisRunResponse) -> None:
-    records = _read_records()
-    records.append(_model_to_dict(run))
-    _write_records(records)
+    payload = _model_to_dict(run)
+    metrics = payload.get("metrics", {})
+    top_topics = {
+        str(item.get("keyword", "general feedback")): int(item.get("count", 0))
+        for item in metrics.get("top_topics", [])
+        if isinstance(item, dict)
+    }
+
+    with closing(connect()) as connection:
+        connection.execute(
+            """
+            INSERT OR REPLACE INTO analysis_runs (
+                id,
+                created_at,
+                input_type,
+                review_count,
+                sentiment_counts_json,
+                topic_counts_json,
+                urgency_counts_json,
+                average_urgency,
+                overall_summary,
+                payload_json
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                run.id,
+                run.created_at,
+                run.source,
+                run.review_count,
+                json.dumps(metrics.get("sentiment_breakdown", {}), sort_keys=True),
+                json.dumps(top_topics, sort_keys=True),
+                json.dumps(metrics.get("urgency_breakdown", {}), sort_keys=True),
+                float(metrics.get("average_urgency", 0.0)),
+                run.summary,
+                json.dumps(payload, sort_keys=True),
+            ),
+        )
+        connection.commit()
 
 
 def get_history(limit: int = 25) -> HistoryResponse:
-    records = sorted(_read_records(), key=lambda item: item.get("created_at", ""), reverse=True)
-    items = [
-        HistoryItem(
-            id=str(record["id"]),
-            created_at=str(record["created_at"]),
-            source=str(record["source"]),
-            review_count=int(record["review_count"]),
-            overall_sentiment=str(record["metrics"]["overall_sentiment"]),
-            high_priority_reviews=int(record["metrics"]["high_priority_reviews"]),
-            summary=str(record["summary"]),
-        )
-        for record in records[:limit]
-    ]
+    with closing(connect()) as connection:
+        rows = connection.execute(
+            """
+            SELECT payload_json
+            FROM analysis_runs
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    items = [_history_item_from_payload(_payload(row)) for row in rows]
     return HistoryResponse(items=items)
 
 
 def get_analysis_run(run_id: str) -> AnalysisRunResponse | None:
-    for record in _read_records():
-        if str(record.get("id")) == run_id:
-            return AnalysisRunResponse(**_normalize_analysis_record(record))
-    return None
+    with closing(connect()) as connection:
+        row = connection.execute(
+            "SELECT payload_json FROM analysis_runs WHERE id = ?",
+            (run_id,),
+        ).fetchone()
+
+    if row is None:
+        return None
+    return AnalysisRunResponse(**_normalize_analysis_record(_payload(row)))
 
 
 def get_latest_analysis_run() -> AnalysisRunResponse | None:
-    records = sorted(_read_records(), key=lambda item: item.get("created_at", ""), reverse=True)
-    if not records:
+    with closing(connect()) as connection:
+        row = connection.execute(
+            """
+            SELECT payload_json
+            FROM analysis_runs
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+
+    if row is None:
         return None
-    return AnalysisRunResponse(**_normalize_analysis_record(records[0]))
+    return AnalysisRunResponse(**_normalize_analysis_record(_payload(row)))
 
 
 def get_review_detail(run_id: str, review_index: int) -> ReviewDetailResponse | None:
@@ -66,62 +109,22 @@ def get_review_detail(run_id: str, review_index: int) -> ReviewDetailResponse | 
     )
 
 
-def get_dashboard_metrics() -> DashboardMetricsResponse:
-    records = _read_records()
-    sentiment_counts: Counter[str] = Counter({"positive": 0, "neutral": 0, "negative": 0})
-    urgency_counts: Counter[str] = Counter({"low": 0, "medium": 0, "high": 0})
-    topic_counts: Counter[str] = Counter()
-
-    for record in records:
-        metrics = record.get("metrics", {})
-        sentiment_counts.update(metrics.get("sentiment_breakdown", {}))
-        urgency_counts.update(metrics.get("urgency_breakdown", {}))
-        topic_counts.update(
-            {
-                item.get("keyword", "general feedback"): int(item.get("count", 0))
-                for item in metrics.get("top_topics", [])
-            }
-        )
-
-    recent_records = sorted(records, key=lambda item: item.get("created_at", ""), reverse=True)
-
-    return DashboardMetricsResponse(
-        total_runs=len(records),
-        total_reviews=sum(int(record.get("review_count", 0)) for record in records),
-        sentiment_breakdown={key: sentiment_counts[key] for key in ["positive", "neutral", "negative"]},
-        urgency_breakdown={key: urgency_counts[key] for key in ["low", "medium", "high"]},
-        top_topics=[
-            KeywordItem(keyword=topic, count=count)
-            for topic, count in topic_counts.most_common(5)
-        ],
-        recent_summaries=[str(record.get("summary", "")) for record in recent_records[:5]],
+def _history_item_from_payload(record: dict[str, Any]) -> HistoryItem:
+    metrics = dict(record.get("metrics", {}))
+    return HistoryItem(
+        id=str(record["id"]),
+        created_at=str(record["created_at"]),
+        input_type=str(record["source"]),
+        review_count=int(record["review_count"]),
+        overall_sentiment=str(metrics.get("overall_sentiment", "neutral")),
+        high_priority_reviews=int(metrics.get("high_priority_reviews", 0)),
+        summary=str(record["summary"]),
     )
 
 
-def _history_path() -> Path:
-    configured_path = os.getenv("REVIEWINSIGHT_HISTORY_PATH")
-    return Path(configured_path) if configured_path else DEFAULT_HISTORY_PATH
-
-
-def _read_records() -> list[dict[str, Any]]:
-    path = _history_path()
-    if not path.exists():
-        return []
-
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return []
-
-    if not isinstance(payload, list):
-        return []
-    return [item for item in payload if isinstance(item, dict)]
-
-
-def _write_records(records: list[dict[str, Any]]) -> None:
-    path = _history_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(records, indent=2), encoding="utf-8")
+def _payload(row: Any) -> dict[str, Any]:
+    payload = json.loads(str(row["payload_json"]))
+    return payload if isinstance(payload, dict) else {}
 
 
 def _model_to_dict(model: AnalysisRunResponse) -> dict[str, Any]:
