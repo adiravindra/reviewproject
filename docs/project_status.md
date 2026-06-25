@@ -4,12 +4,11 @@
 
 ReviewInsight is an MVP customer review analysis dashboard. It analyzes one pasted review at a time, saves the result to SQLite, and shows saved review history.
 
-The goal is clarity over breadth. The project no longer supports CSV uploads, batch analysis, charts, trends, multi-page dashboards, or test infrastructure.
+The goal is clarity over breadth. The project no longer supports CSV uploads, batch analysis, charts, trends, or multi-page dashboards.
 
 ## Current Features
 
 - FastAPI backend with:
-  - `GET /health`
   - `POST /analysis/single`
   - `GET /analysis/history`
 - Streamlit frontend with two pages:
@@ -44,7 +43,7 @@ streamlit run dashboard\streamlit_app.py
 - Overview, Review Details, Sentiment, Topics, Urgency, and Summaries dashboard pages.
 - Charting and trend views.
 - Advanced history filtering and run-detail exploration.
-- Test files and test runner scripts.
+- Helper scripts.
 - Batch insights and keyword-dashboard helper modules.
 - Unneeded dependencies for pandas, Plotly, matplotlib, scikit-learn, and multipart uploads.
 

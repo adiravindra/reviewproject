@@ -3,12 +3,6 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
-class HealthResponse(BaseModel):
-    status: str
-    project: str
-    version: str
-
-
 class ReviewAnalysisRequest(BaseModel):
     text: str = Field(..., description="A single customer review to analyze.")
 
@@ -43,11 +37,8 @@ class HistoryResponse(BaseModel):
     items: list[HistoryItem]
 
 
-class ErrorResponse(BaseModel):
-    detail: str
-
-
 def model_to_dict(model: BaseModel) -> dict[str, Any]:
+    # Pydantic v2 uses model_dump; older versions use dict.
     if hasattr(model, "model_dump"):
         return model.model_dump()
     return model.dict()

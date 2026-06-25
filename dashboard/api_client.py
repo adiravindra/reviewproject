@@ -1,4 +1,3 @@
-from collections.abc import Callable
 from typing import Any
 
 import requests
@@ -6,24 +5,20 @@ import requests
 
 DEFAULT_API_BASE_URL = "http://127.0.0.1:8000"
 
-PostFunction = Callable[..., Any]
-GetFunction = Callable[..., Any]
-
 
 class ApiClientError(Exception):
-    """Raised when Streamlit cannot get a usable backend response."""
+    pass
 
 
 def analyze_review(
     review_text: str,
     api_base_url: str = DEFAULT_API_BASE_URL,
-    post: PostFunction = requests.post,
 ) -> dict[str, Any]:
     cleaned_text = review_text.strip()
     if not cleaned_text:
         raise ApiClientError("Paste one review before analyzing.")
 
-    response = post(
+    response = requests.post(
         _api_url(api_base_url, "/analysis/single"),
         json={"text": cleaned_text},
         timeout=30,
@@ -33,24 +28,11 @@ def analyze_review(
 
 def fetch_history(
     api_base_url: str = DEFAULT_API_BASE_URL,
-    get: GetFunction = requests.get,
 ) -> dict[str, Any]:
     try:
-        response = get(_api_url(api_base_url, "/analysis/history"), timeout=10)
+        response = requests.get(_api_url(api_base_url, "/analysis/history"), timeout=10)
     except Exception as exc:
         raise ApiClientError("Could not load analysis history from the backend.") from exc
-
-    return _parse_response(response)
-
-
-def fetch_health(
-    api_base_url: str = DEFAULT_API_BASE_URL,
-    get: GetFunction = requests.get,
-) -> dict[str, Any]:
-    try:
-        response = get(_api_url(api_base_url, "/health"), timeout=10)
-    except Exception as exc:
-        raise ApiClientError("Could not reach the backend. Make sure FastAPI is running.") from exc
 
     return _parse_response(response)
 

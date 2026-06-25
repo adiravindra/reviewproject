@@ -1,8 +1,7 @@
 from fastapi import FastAPI
 
-from backend.app.routers import health, reviews
+from backend.app.routers.reviews import router as reviews_router
 
 app = FastAPI(title="ReviewInsight API")
 
-app.include_router(health.router)
-app.include_router(reviews.router)
+app.include_router(reviews_router)

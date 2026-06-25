@@ -51,6 +51,7 @@ def analyze_review(text: str) -> ReviewAnalysisResponse:
         sentiment = "negative"
 
     fallback_summary = summarize_review(cleaned_text)
+    # Try the local Hugging Face model, but use the simple summary if it fails.
     model_summary = summarize_with_model([cleaned_text], fallback_summary=fallback_summary)
 
     return ReviewAnalysisResponse(

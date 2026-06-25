@@ -15,7 +15,7 @@ The app has a FastAPI backend, a Streamlit frontend, and local SQLite history. T
   - Summary
   - Raw Result / Debug Info
 - History page showing saved SQLite review analyses.
-- FastAPI routes for health, single-review analysis, and history.
+- FastAPI routes for single-review analysis and history.
 
 ## Intentionally Removed
 
@@ -24,7 +24,7 @@ The app has a FastAPI backend, a Streamlit frontend, and local SQLite history. T
 - Multi-page dashboards.
 - Trends, charts, metrics dashboards, and advanced analytics.
 - Advanced filtering and saved-run exploration.
-- Test files, pytest-style setup, smoke scripts, and test helper scripts.
+- Smoke scripts and helper scripts.
 - Unused helper modules for batch insights and keyword dashboards.
 
 ## Install
@@ -47,12 +47,6 @@ python -c "import fastapi, streamlit, requests, transformers, torch; print('impo
 
 ```powershell
 uvicorn backend.app.main:app --reload
-```
-
-Health check:
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/health
 ```
 
 Analyze one review:
