@@ -4,53 +4,43 @@ from typing import Any
 import requests
 
 
-class ApiClientError(Exception):
-    """Raised when the dashboard cannot get a usable backend response."""
-
+DEFAULT_API_BASE_URL = "http://127.0.0.1:8000"
 
 PostFunction = Callable[..., Any]
 GetFunction = Callable[..., Any]
 
 
-DEFAULT_API_BASE_URL = "http://127.0.0.1:8000"
+class ApiClientError(Exception):
+    """Raised when Streamlit cannot get a usable backend response."""
 
 
-def _api_url(api_base_url: str, path: str) -> str:
-    return f"{api_base_url.rstrip('/')}/{path.lstrip('/')}"
-
-
-def _clean_review_text(text: str) -> str:
-    cleaned_text = text.strip()
+def analyze_review(
+    review_text: str,
+    api_base_url: str = DEFAULT_API_BASE_URL,
+    post: PostFunction = requests.post,
+) -> dict[str, Any]:
+    cleaned_text = review_text.strip()
     if not cleaned_text:
-        raise ApiClientError("Enter at least one review before analyzing.")
-    return cleaned_text
+        raise ApiClientError("Paste one review before analyzing.")
+
+    response = post(
+        _api_url(api_base_url, "/analysis/single"),
+        json={"text": cleaned_text},
+        timeout=30,
+    )
+    return _parse_response(response)
 
 
-def _review_payload(review_texts: list[str]) -> dict[str, list[dict[str, str]]]:
-    cleaned_reviews = [
-        {"text": review_text.strip()}
-        for review_text in review_texts
-        if review_text.strip()
-    ]
-
-    if not cleaned_reviews:
-        raise ApiClientError("Enter at least one review before analyzing.")
-
-    return {"reviews": cleaned_reviews}
-
-
-def _parse_response(response: Any) -> dict[str, Any]:
+def fetch_history(
+    api_base_url: str = DEFAULT_API_BASE_URL,
+    get: GetFunction = requests.get,
+) -> dict[str, Any]:
     try:
-        response.raise_for_status()
+        response = get(_api_url(api_base_url, "/analysis/history"), timeout=10)
     except Exception as exc:
-        raise ApiClientError(
-            "Could not analyze reviews. Make sure the FastAPI backend is running."
-        ) from exc
+        raise ApiClientError("Could not load analysis history from the backend.") from exc
 
-    try:
-        return response.json()
-    except ValueError as exc:
-        raise ApiClientError("The backend returned an invalid response.") from exc
+    return _parse_response(response)
 
 
 def fetch_health(
@@ -60,162 +50,22 @@ def fetch_health(
     try:
         response = get(_api_url(api_base_url, "/health"), timeout=10)
     except Exception as exc:
-        raise ApiClientError(
-            "Could not reach the backend health endpoint. Make sure FastAPI is running."
-        ) from exc
+        raise ApiClientError("Could not reach the backend. Make sure FastAPI is running.") from exc
 
     return _parse_response(response)
 
 
-def analyze_single_review(
-    review_text: str,
-    save_to_history: bool = False,
-    api_base_url: str = DEFAULT_API_BASE_URL,
-    post: PostFunction = requests.post,
-) -> dict[str, Any]:
-    response = post(
-        _api_url(api_base_url, "/analysis/single"),
-        json={
-            "text": _clean_review_text(review_text),
-            "save_to_history": save_to_history,
-        },
-        timeout=10,
-    )
-    return _parse_response(response)
+def _api_url(api_base_url: str, path: str) -> str:
+    return f"{api_base_url.rstrip('/')}/{path.lstrip('/')}"
 
 
-def analyze_reviews_from_api_payload(
-    review_texts: list[str],
-    api_base_url: str = DEFAULT_API_BASE_URL,
-    post: PostFunction = requests.post,
-) -> dict[str, Any]:
-    payload = _review_payload(review_texts)
-    response = post(
-        _api_url(api_base_url, "/analysis/batch"),
-        json=payload,
-        timeout=10,
-    )
-    return _parse_response(response)
-
-
-def analyze_reviews_csv(
-    filename: str,
-    contents: bytes,
-    api_base_url: str = DEFAULT_API_BASE_URL,
-    post: PostFunction = requests.post,
-) -> dict[str, Any]:
-    if not contents:
-        raise ApiClientError("Upload a CSV file before analyzing.")
-
-    response = post(
-        _api_url(api_base_url, "/analysis/csv"),
-        files={"file": (filename, contents, "text/csv")},
-        timeout=10,
-    )
-    return _parse_response(response)
-
-
-def fetch_analysis_runs(
-    api_base_url: str = DEFAULT_API_BASE_URL,
-    get: GetFunction = requests.get,
-) -> dict[str, Any]:
+def _parse_response(response: Any) -> dict[str, Any]:
     try:
-        response = get(_api_url(api_base_url, "/analysis/runs"), timeout=10)
+        response.raise_for_status()
     except Exception as exc:
-        raise ApiClientError("Could not load analysis history from the backend.") from exc
+        raise ApiClientError("The backend could not complete the request.") from exc
 
-    return _parse_response(response)
-
-
-def fetch_analysis_run(
-    run_id: str,
-    api_base_url: str = DEFAULT_API_BASE_URL,
-    get: GetFunction = requests.get,
-) -> dict[str, Any]:
     try:
-        response = get(_api_url(api_base_url, f"/analysis/runs/{run_id}"), timeout=10)
-    except Exception as exc:
-        raise ApiClientError("Could not load analysis run from the backend.") from exc
-
-    return _parse_response(response)
-
-
-def fetch_latest_analysis(
-    api_base_url: str = DEFAULT_API_BASE_URL,
-    get: GetFunction = requests.get,
-) -> dict[str, Any]:
-    try:
-        response = get(_api_url(api_base_url, "/analysis/latest"), timeout=10)
-    except Exception as exc:
-        raise ApiClientError("Could not load the latest analysis from the backend.") from exc
-
-    return _parse_response(response)
-
-
-def fetch_review_detail(
-    run_id: str,
-    review_index: int,
-    api_base_url: str = DEFAULT_API_BASE_URL,
-    get: GetFunction = requests.get,
-) -> dict[str, Any]:
-    try:
-        response = get(
-            _api_url(api_base_url, f"/analysis/runs/{run_id}/reviews/{review_index}"),
-            timeout=10,
-        )
-    except Exception as exc:
-        raise ApiClientError("Could not load review details from the backend.") from exc
-
-    return _parse_response(response)
-
-
-def fetch_sentiment(
-    review_text: str,
-    api_base_url: str = DEFAULT_API_BASE_URL,
-    post: PostFunction = requests.post,
-) -> dict[str, Any]:
-    response = post(
-        _api_url(api_base_url, "/sentiment"),
-        json={"text": _clean_review_text(review_text)},
-        timeout=10,
-    )
-    return _parse_response(response)
-
-
-def fetch_keywords(
-    review_texts: list[str],
-    api_base_url: str = DEFAULT_API_BASE_URL,
-    post: PostFunction = requests.post,
-) -> dict[str, Any]:
-    response = post(
-        _api_url(api_base_url, "/keywords"),
-        json=_review_payload(review_texts),
-        timeout=10,
-    )
-    return _parse_response(response)
-
-
-def fetch_summary(
-    review_texts: list[str],
-    api_base_url: str = DEFAULT_API_BASE_URL,
-    post: PostFunction = requests.post,
-) -> dict[str, Any]:
-    response = post(
-        _api_url(api_base_url, "/summarize"),
-        json=_review_payload(review_texts),
-        timeout=10,
-    )
-    return _parse_response(response)
-
-
-def fetch_review_insights(
-    review_texts: list[str],
-    api_base_url: str = DEFAULT_API_BASE_URL,
-    post: PostFunction = requests.post,
-) -> dict[str, Any]:
-    response = post(
-        _api_url(api_base_url, "/insights"),
-        json=_review_payload(review_texts),
-        timeout=10,
-    )
-    return _parse_response(response)
+        return response.json()
+    except ValueError as exc:
+        raise ApiClientError("The backend returned an invalid response.") from exc
