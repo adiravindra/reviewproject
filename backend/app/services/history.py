@@ -11,6 +11,7 @@ from backend.app.schemas.reviews import (
 from backend.app.services.db import connect
 
 
+# Save the full analysis JSON in SQLite.
 def save_review_analysis(result: ReviewAnalysisResponse) -> None:
     payload = model_to_dict(result)
     topic_counts = {topic: 1 for topic in result.topics}
@@ -51,6 +52,7 @@ def save_review_analysis(result: ReviewAnalysisResponse) -> None:
 
 
 def get_history(limit: int = 50) -> HistoryResponse:
+    # Newest reviews appear first.
     with closing(connect()) as connection:
         rows = connection.execute(
             """
@@ -71,25 +73,12 @@ def _payload(row: Any) -> dict[str, Any]:
 
 
 def _history_item_from_payload(payload: dict[str, Any]) -> HistoryItem:
-    if "text" in payload:
-        return HistoryItem(
-            id=str(payload.get("id", "")),
-            created_at=str(payload.get("created_at", "")),
-            text=str(payload.get("text", "")),
-            sentiment=str(payload.get("sentiment", "neutral")),
-            topics=[str(topic) for topic in payload.get("topics", [])],
-            urgency=str(payload.get("urgency", "low")),
-            summary=str(payload.get("summary", "")),
-        )
-
-    reviews = payload.get("reviews", [])
-    first_review = reviews[0] if isinstance(reviews, list) and reviews else {}
     return HistoryItem(
         id=str(payload.get("id", "")),
         created_at=str(payload.get("created_at", "")),
-        text=str(first_review.get("text", "")) if isinstance(first_review, dict) else "",
-        sentiment=str(first_review.get("sentiment", "neutral")) if isinstance(first_review, dict) else "neutral",
-        topics=[str(first_review.get("topic", "general feedback"))] if isinstance(first_review, dict) else [],
-        urgency=str(first_review.get("urgency", "low")) if isinstance(first_review, dict) else "low",
-        summary=str(first_review.get("summary", payload.get("summary", ""))) if isinstance(first_review, dict) else "",
+        text=str(payload.get("text", "")),
+        sentiment=str(payload.get("sentiment", "neutral")),
+        topics=[str(topic) for topic in payload.get("topics", [])],
+        urgency=str(payload.get("urgency", "low")),
+        summary=str(payload.get("summary", "")),
     )

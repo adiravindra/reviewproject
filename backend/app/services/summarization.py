@@ -1,3 +1,4 @@
+# Simple fallback summary used when the model is not available.
 def summarize_review(text: str, max_length: int = 180) -> str:
     cleaned = " ".join(text.split())
     if len(cleaned) > max_length:

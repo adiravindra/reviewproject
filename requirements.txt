@@ -1,6 +1,11 @@
+# Backend API
 fastapi
 uvicorn
+
+# Frontend UI
 requests
 streamlit
+
+# Optional local model summary
 transformers
 torch

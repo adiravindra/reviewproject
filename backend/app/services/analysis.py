@@ -41,6 +41,7 @@ HIGH_URGENCY_PHRASES = {"cannot log in", "can't log in", "lost data", "payment f
 MEDIUM_URGENCY_TERMS = {"bug", "error", "late", "slow", "stuck", "timeout"}
 
 
+# Main backend function: clean text, analyze it, and return one result.
 def analyze_review(text: str) -> ReviewAnalysisResponse:
     cleaned_text = prepare_reviews([text])[0]
     sentiment_result = analyze_sentiment(cleaned_text)
@@ -77,6 +78,7 @@ def _tokens(text: str) -> set[str]:
 def _detect_topics(text: str) -> list[str]:
     words = _tokens(text)
     normalized_text = " ".join(text.casefold().split())
+    # A topic matches when the review contains one of its simple keywords.
     topics = [
         topic
         for topic, terms in TOPIC_TERMS.items()
@@ -90,6 +92,7 @@ def _urgency_score(text: str, sentiment: str) -> float:
     normalized_text = " ".join(text.casefold().split())
     score = 0.0
 
+    # More urgent words make the score higher.
     score += 0.25 * len(words & HIGH_URGENCY_TERMS)
     score += 0.2 * sum(1 for phrase in HIGH_URGENCY_PHRASES if phrase in normalized_text)
     score += 0.1 * len(words & MEDIUM_URGENCY_TERMS)

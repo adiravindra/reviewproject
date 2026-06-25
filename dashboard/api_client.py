@@ -10,6 +10,7 @@ class ApiClientError(Exception):
     pass
 
 
+# Send one review to the backend.
 def analyze_review(
     review_text: str,
     api_base_url: str = DEFAULT_API_BASE_URL,
@@ -29,6 +30,7 @@ def analyze_review(
 def fetch_history(
     api_base_url: str = DEFAULT_API_BASE_URL,
 ) -> dict[str, Any]:
+    # Load saved reviews for the History page.
     try:
         response = requests.get(_api_url(api_base_url, "/analysis/history"), timeout=10)
     except Exception as exc:
@@ -42,6 +44,7 @@ def _api_url(api_base_url: str, path: str) -> str:
 
 
 def _parse_response(response: Any) -> dict[str, Any]:
+    # Turn backend or connection problems into simple Streamlit errors.
     try:
         response.raise_for_status()
     except Exception as exc:

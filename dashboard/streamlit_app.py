@@ -14,6 +14,7 @@ from ui import (
 configure_page("Analysis")
 render_nav()
 
+# This is the main Streamlit page.
 st.title("Analysis")
 st.write("Paste one customer review, analyze it, and save it to SQLite history.")
 
@@ -40,6 +41,7 @@ if st.button("Analyze Review", type="primary"):
 
 result = st.session_state.get("latest_review_result")
 if isinstance(result, dict):
+    # Show the result below the form after the user clicks Analyze.
     st.divider()
     render_original_review(str(result.get("text", "")))
     render_result_tabs(result)

@@ -7,6 +7,7 @@ from ui import backend_url_input, configure_page, history_rows, render_error, re
 configure_page("History")
 render_nav()
 
+# This page reads saved results from SQLite through the backend.
 st.title("History")
 st.write("Previously analyzed reviews saved in SQLite.")
 
@@ -21,6 +22,7 @@ else:
     items = history.get("items", [])
     rows = history_rows(items if isinstance(items, list) else [])
     if rows:
+        # Plain cards are easier for beginners to understand than a data grid.
         for row in rows:
             with st.container(border=True):
                 st.caption(row["Timestamp"])

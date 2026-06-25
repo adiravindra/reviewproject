@@ -32,6 +32,7 @@ NEGATIVE_WORDS = {
 }
 
 
+# A tiny sentiment result object keeps the return value easy to read.
 @dataclass(frozen=True)
 class SentimentResult:
     text: str
@@ -40,6 +41,7 @@ class SentimentResult:
 
 
 def analyze_sentiment(text: str) -> SentimentResult:
+    # Count simple positive and negative words.
     words = {word.strip(".,!?;:()[]{}\"'").casefold() for word in text.split()}
     score = len(words & POSITIVE_WORDS) - len(words & NEGATIVE_WORDS)
 

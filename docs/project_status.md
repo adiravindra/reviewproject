@@ -23,14 +23,23 @@ The goal is clarity over breadth. The project no longer supports CSV uploads, ba
 - SQLite history at `data/reviewinsight.db` by default.
 - Rule-based sentiment, topics, and urgency.
 - Hugging Face summary attempt with rule-based fallback.
+- One app runner script at `scripts/run_app.py`.
 
-## How To Run Backend
+## How To Run The App
+
+```powershell
+python scripts\run_app.py
+```
+
+Then open `http://127.0.0.1:8501`.
+
+## How To Run Backend Manually
 
 ```powershell
 uvicorn backend.app.main:app --reload
 ```
 
-## How To Run Frontend
+## How To Run Frontend Manually
 
 ```powershell
 streamlit run dashboard\streamlit_app.py
@@ -43,7 +52,7 @@ streamlit run dashboard\streamlit_app.py
 - Overview, Review Details, Sentiment, Topics, Urgency, and Summaries dashboard pages.
 - Charting and trend views.
 - Advanced history filtering and run-detail exploration.
-- Helper scripts.
+- Extra helper scripts.
 - Batch insights and keyword-dashboard helper modules.
 - Unneeded dependencies for pandas, Plotly, matplotlib, scikit-learn, and multipart uploads.
 

@@ -12,6 +12,7 @@ pipeline: Any | None = None
 _summarizer_pipeline: Any | None = None
 
 
+# Small return object for either a model summary or a fallback summary.
 @dataclass(frozen=True)
 class ModelSummaryResult:
     summary: str
@@ -28,6 +29,7 @@ def summarize_with_model(
 ) -> ModelSummaryResult:
     started_at = monotonic()
 
+    # If anything goes wrong, return the simple summary instead of crashing.
     try:
         summarizer = _get_summarizer(model_name)
     except Exception as exc:
@@ -81,6 +83,7 @@ def _get_summarizer(model_name: str) -> Any:
 def _load_local_model(model_name: str) -> tuple[Any, Any, Any]:
     global pipeline
 
+    # local_files_only keeps this MVP from downloading files during a request.
     if pipeline is None:
         from transformers import (
             AutoModelForCausalLM,

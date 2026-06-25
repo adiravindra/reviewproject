@@ -16,6 +16,7 @@ The app has a FastAPI backend, a Streamlit frontend, and local SQLite history. T
   - Raw Result / Debug Info
 - History page showing saved SQLite review analyses.
 - FastAPI routes for single-review analysis and history.
+- One helper script for starting the app.
 
 ## Intentionally Removed
 
@@ -24,7 +25,7 @@ The app has a FastAPI backend, a Streamlit frontend, and local SQLite history. T
 - Multi-page dashboards.
 - Trends, charts, metrics dashboards, and advanced analytics.
 - Advanced filtering and saved-run exploration.
-- Smoke scripts and helper scripts.
+- Extra helper scripts.
 - Unused helper modules for batch insights and keyword dashboards.
 
 ## Install
@@ -43,7 +44,23 @@ Optional import check:
 python -c "import fastapi, streamlit, requests, transformers, torch; print('imports ok')"
 ```
 
-## Run Backend
+## Run App
+
+This is the easiest way to start both FastAPI and Streamlit:
+
+```powershell
+python scripts\run_app.py
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8501
+```
+
+Press `Ctrl+C` in the terminal to stop both services.
+
+## Run Backend Manually
 
 ```powershell
 uvicorn backend.app.main:app --reload
@@ -61,7 +78,7 @@ Fetch history:
 Invoke-RestMethod http://127.0.0.1:8000/analysis/history
 ```
 
-## Run Frontend
+## Run Frontend Manually
 
 In a second terminal:
 

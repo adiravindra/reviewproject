@@ -3,6 +3,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+# These classes describe the JSON sent between Streamlit and FastAPI.
 class ReviewAnalysisRequest(BaseModel):
     text: str = Field(..., description="A single customer review to analyze.")
 

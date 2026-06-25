@@ -6,6 +6,7 @@ import streamlit as st
 from api_client import DEFAULT_API_BASE_URL
 
 
+# Shared Streamlit setup and simple visual styling.
 def configure_page(title: str) -> None:
     st.set_page_config(
         page_title=f"ReviewInsight | {title}",
@@ -16,7 +17,6 @@ def configure_page(title: str) -> None:
         """
         <style>
             .stApp { background: #f7f8fb; color: #172033; }
-            section[data-testid="stSidebar"], div[data-testid="collapsedControl"] { display: none; }
             h1, h2, h3 { color: #172033; letter-spacing: 0; }
             .ri-nav {
                 display: flex; justify-content: space-between; align-items: center;
@@ -36,11 +36,6 @@ def configure_page(title: str) -> None:
             }
             .ri-panel h3 { font-size: 1.05rem; margin: 0 0 8px; }
             .ri-panel p { color: #687385; margin: 0; }
-            div[data-testid="stMetric"] {
-                border: 1px solid #dfe4ec; border-radius: 8px; background: #fff;
-                padding: 12px 14px;
-            }
-            div[data-testid="stButton"] > button { border-radius: 8px; font-weight: 650; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -72,6 +67,7 @@ def backend_url_input() -> str:
 
 
 def render_result_tabs(result: dict[str, Any]) -> None:
+    # Tabs keep the single-review result easy to scan.
     sentiment_tab, topics_tab, urgency_tab, summary_tab, raw_tab = st.tabs(
         ["Sentiment", "Topics / Categories", "Urgency", "Summary", "Raw Result / Debug Info"]
     )

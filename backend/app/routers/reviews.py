@@ -12,6 +12,7 @@ from backend.app.services.history import get_history, save_review_analysis
 router = APIRouter(tags=["reviews"])
 
 
+# Analyze one review and save it right away.
 @router.post("/analysis/single", response_model=ReviewAnalysisResponse)
 def analyze_single_review(review: ReviewAnalysisRequest) -> ReviewAnalysisResponse:
     try:
@@ -27,6 +28,7 @@ def analyze_single_review(review: ReviewAnalysisRequest) -> ReviewAnalysisRespon
     return result
 
 
+# Return the saved reviews for the Streamlit History page.
 @router.get("/analysis/history", response_model=HistoryResponse)
 def analysis_history(limit: int = Query(default=50, ge=1, le=200)) -> HistoryResponse:
     return get_history(limit=limit)
