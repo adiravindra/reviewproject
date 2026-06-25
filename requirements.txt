@@ -2,10 +2,5 @@ fastapi
 uvicorn
 requests
 streamlit
-pandas
-scikit-learn
 transformers
 torch
-plotly
-matplotlib
-python-multipart

@@ -1,12 +1,6 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
-
-
-class ReviewInput(BaseModel):
-    text: str = Field(..., description="Raw customer review text.")
-
-
-class ReviewBatchInput(BaseModel):
-    reviews: list[ReviewInput] = Field(..., min_length=1)
 
 
 class HealthResponse(BaseModel):
@@ -15,81 +9,33 @@ class HealthResponse(BaseModel):
     version: str
 
 
-class SingleReviewStructuredAnalysis(BaseModel):
-    text: str
-    sentiment: str
-    topics: list[str]
-    urgency_score: float
-    urgency_label: str
-    summary: str
+class ReviewAnalysisRequest(BaseModel):
+    text: str = Field(..., description="A single customer review to analyze.")
 
 
-class KeywordItem(BaseModel):
-    keyword: str
-    count: int
-
-
-class SingleReviewAnalysisRequest(ReviewInput):
-    save_to_history: bool = Field(
-        False,
-        description="Whether to persist this single-review analysis as an analysis run.",
-    )
-
-
-class ReviewBatchAnalysisRequest(ReviewBatchInput):
-    pass
-
-
-class ReviewResult(BaseModel):
+class ReviewAnalysisResponse(BaseModel):
+    id: str
+    created_at: str
     text: str
     sentiment: str
     sentiment_score: int
-    topic: str
+    topics: list[str]
     urgency: str
+    urgency_score: float
     summary: str
-    keywords: list[str]
-
-
-class AnalysisMetrics(BaseModel):
-    review_count: int
-    overall_sentiment: str
-    sentiment_breakdown: dict[str, int]
-    urgency_breakdown: dict[str, int]
-    top_topics: list[KeywordItem]
-    average_urgency: float
-    high_priority_reviews: int
-
-
-class AnalysisRunResponse(BaseModel):
-    id: str
-    created_at: str
-    source: str
-    review_count: int
-    reviews: list[ReviewResult]
-    summary: str
-    metrics: AnalysisMetrics
-    most_urgent_reviews: list[ReviewResult]
-
-
-class SingleReviewAnalysisResponse(SingleReviewStructuredAnalysis):
-    saved_to_history: bool
-    run_id: str | None = None
-    run: AnalysisRunResponse | None = None
-
-
-class ReviewDetailResponse(BaseModel):
-    run_id: str
-    review_index: int
-    review: ReviewResult
+    summary_source: str = "rule_based_fallback"
+    model_name: str | None = None
+    fallback_reason: str | None = None
+    saved_to_history: bool = True
 
 
 class HistoryItem(BaseModel):
     id: str
     created_at: str
-    input_type: str
-    review_count: int
-    overall_sentiment: str
-    high_priority_reviews: int
+    text: str
+    sentiment: str
+    topics: list[str]
+    urgency: str
     summary: str
 
 
@@ -97,28 +43,11 @@ class HistoryResponse(BaseModel):
     items: list[HistoryItem]
 
 
-class SentimentResponse(BaseModel):
-    text: str
-    sentiment: str
-    score: int
+class ErrorResponse(BaseModel):
+    detail: str
 
 
-class KeywordResponse(BaseModel):
-    keywords: list[KeywordItem]
-    themes: list[KeywordItem]
-
-
-class SummaryResponse(BaseModel):
-    summary: str
-    review_count: int
-
-
-class InsightsResponse(BaseModel):
-    review_count: int
-    overall_sentiment: str
-    sentiment_breakdown: dict[str, int]
-    positive_themes: list[str]
-    negative_themes: list[str]
-    common_complaints: list[str]
-    summary: str
-    suggested_action_items: list[str]
+def model_to_dict(model: BaseModel) -> dict[str, Any]:
+    if hasattr(model, "model_dump"):
+        return model.model_dump()
+    return model.dict()
