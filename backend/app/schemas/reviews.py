@@ -21,6 +21,10 @@ class ReviewAnalysisResponse(BaseModel):
     summary_source: str = "rule_based_fallback"
     model_name: str | None = None
     fallback_reason: str | None = None
+    sentiment_source: str = "rule_based_fallback"
+    sentiment_model_name: str | None = None
+    sentiment_confidence: float | None = None
+    sentiment_fallback_reason: str | None = None
     saved_to_history: bool = True
 
 

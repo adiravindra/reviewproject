@@ -4,25 +4,22 @@ from time import monotonic
 from typing import Any
 
 
-TRANSFORMER_SUMMARIZATION_TASK = "summarization"
-DEFAULT_SUMMARIZATION_MODEL = "sshleifer/distilbart-cnn-12-6"
-DEFAULT_MAX_INFERENCE_SECONDS = 12.0
+DEFAULT_SUMMARIZATION_MODEL = "Falconsai/text_summarization"
+DEFAULT_MAX_INFERENCE_SECONDS = 20.0
 MAX_INPUT_CHARACTERS = 4000
 ENABLE_MODEL_SUMMARY_ENV = "REVIEWINSIGHT_ENABLE_MODEL_SUMMARY"
 MODEL_LOCAL_ONLY_ENV = "REVIEWINSIGHT_MODEL_LOCAL_ONLY"
 TRUE_VALUES = {"1", "true", "yes", "on"}
 FALSE_VALUES = {"0", "false", "no", "off"}
 
-pipeline: Any | None = None
-_summarizer_pipeline: Any | None = None
+_summary_components: tuple[Any, Any] | None = None
 
 
-# Small return object for either a model summary or a fallback summary.
 @dataclass(frozen=True)
 class ModelSummaryResult:
     summary: str
     summary_source: str
-    model_name: str
+    model_name: str | None = None
     fallback_reason: str | None = None
 
 
@@ -37,32 +34,37 @@ def summarize_with_model(
 
     started_at = monotonic()
 
-    # If anything goes wrong, return the simple summary instead of crashing.
     try:
-        summarizer = _get_summarizer(model_name)
+        tokenizer, model = _get_summary_components(model_name)
     except Exception as exc:
         return _fallback(fallback_summary, model_name, f"model_load_failed: {exc}")
 
     try:
-        output = summarizer(
+        tokenized_input = tokenizer(
             _summarization_input(review_texts),
-            max_length=80,
-            min_length=20,
-            do_sample=False,
-            clean_up_tokenization_spaces=False,
+            max_length=512,
+            truncation=True,
+            return_tensors="pt",
         )
+        if hasattr(tokenized_input, "to"):
+            tokenized_input = tokenized_input.to(getattr(model, "device", "cpu"))
+
+        output_ids = model.generate(
+            **tokenized_input,
+            max_new_tokens=80,
+            min_new_tokens=20,
+            num_beams=4,
+            do_sample=False,
+        )
+        summary = tokenizer.decode(output_ids[0], skip_special_tokens=True)
     except Exception as exc:
         return _fallback(fallback_summary, model_name, f"model_inference_failed: {exc}")
 
     elapsed = monotonic() - started_at
     if elapsed > max_inference_seconds:
-        return _fallback(
-            fallback_summary,
-            model_name,
-            f"model_inference_too_slow: {elapsed:.2f}s",
-        )
+        return _fallback(fallback_summary, model_name, f"model_inference_too_slow: {elapsed:.2f}s")
 
-    summary = _extract_summary_text(output)
+    summary = " ".join(str(summary).split()).strip()
     if not summary:
         return _fallback(fallback_summary, model_name, "model_returned_empty_summary")
 
@@ -73,55 +75,31 @@ def summarize_with_model(
     )
 
 
-def _get_summarizer(model_name: str) -> Any:
-    global _summarizer_pipeline
+def _get_summary_components(model_name: str) -> tuple[Any, Any]:
+    global _summary_components
 
-    if _summarizer_pipeline is None:
-        pipeline_factory, tokenizer, model = _load_local_model(model_name)
-        _summarizer_pipeline = pipeline_factory(
-            TRANSFORMER_SUMMARIZATION_TASK,
-            model=model,
-            tokenizer=tokenizer,
-        )
-    return _summarizer_pipeline
+    if _summary_components is None:
+        _summary_components = _load_summary_components(model_name)
+    return _summary_components
 
 
-def _load_local_model(model_name: str) -> tuple[Any, Any, Any]:
-    global pipeline
+def ensure_summary_model_ready(model_name: str = DEFAULT_SUMMARIZATION_MODEL) -> None:
+    if _model_summary_enabled():
+        _get_summary_components(model_name)
 
-    if pipeline is None:
-        from transformers import (
-            AutoModelForSeq2SeqLM,
-            AutoTokenizer,
-            pipeline as transformers_pipeline,
-        )
 
-        pipeline = transformers_pipeline
-    else:
-        from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+def _load_summary_components(model_name: str) -> tuple[Any, Any]:
+    from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
     local_files_only = _model_local_files_only()
     tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=local_files_only)
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name, local_files_only=local_files_only)
-    return pipeline, tokenizer, model
+    return tokenizer, model
 
 
 def _summarization_input(review_texts: list[str]) -> str:
     joined = " ".join(text.strip() for text in review_texts if text.strip())
     return joined[:MAX_INPUT_CHARACTERS]
-
-
-def _extract_summary_text(output: Any) -> str:
-    generated_text = ""
-    if isinstance(output, list) and output and isinstance(output[0], dict):
-        generated_text = str(output[0].get("summary_text") or output[0].get("generated_text") or "")
-    elif isinstance(output, dict):
-        generated_text = str(output.get("summary_text") or output.get("generated_text") or "")
-
-    if "Summary:" in generated_text:
-        generated_text = generated_text.rsplit("Summary:", 1)[-1]
-
-    return " ".join(generated_text.split()).strip()
 
 
 def _format_review_summary(summary: str, review_texts: list[str]) -> str:

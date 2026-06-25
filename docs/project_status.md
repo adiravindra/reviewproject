@@ -21,8 +21,8 @@ The goal is clarity over breadth. The project no longer supports CSV uploads, ba
   - Summary
   - Raw Result / Debug Info
 - SQLite history at `data/reviewinsight.db` by default.
-- Rule-based sentiment, topics, and urgency.
-- Hugging Face summary attempt with rule-based fallback.
+- Hugging Face summary and sentiment analysis with rule-based fallbacks.
+- Rule-based topics and urgency.
 - One app runner script at `scripts/run_app.py`.
 
 ## How To Run The App
@@ -31,7 +31,7 @@ The goal is clarity over breadth. The project no longer supports CSV uploads, ba
 python scripts\run_app.py
 ```
 
-Then open `http://127.0.0.1:8501`.
+The runner checks and loads the summary and sentiment models before starting FastAPI and Streamlit. Then open `http://127.0.0.1:8501`.
 
 ## How To Run Backend Manually
 
@@ -68,4 +68,4 @@ streamlit run dashboard\streamlit_app.py
 
 ## Notes
 
-The model summary path is enabled by default with `sshleifer/distilbart-cnn-12-6`, a distilled BART summarizer. Set `REVIEWINSIGHT_ENABLE_MODEL_SUMMARY=0` before starting the app to use only the fast rule-based fallback summary, or `REVIEWINSIGHT_MODEL_LOCAL_ONLY=1` to prevent model downloads. If Transformers or the model cannot load, the backend returns the rule-based summary and includes fallback metadata in the raw result.
+The model summary path is enabled by default with `Falconsai/text_summarization`, loaded directly through `AutoTokenizer` and `AutoModelForSeq2SeqLM` because Transformers v5 no longer supports the `summarization` pipeline task. The model sentiment path is enabled by default with `distilbert-base-uncased-finetuned-sst-2-english` and the supported `sentiment-analysis` Transformers task. Set `REVIEWINSIGHT_ENABLE_MODEL_SUMMARY=0` or `REVIEWINSIGHT_ENABLE_MODEL_SENTIMENT=0` before starting the app to use rule-based fallbacks, or `REVIEWINSIGHT_MODEL_LOCAL_ONLY=1` to prevent model downloads.

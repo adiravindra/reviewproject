@@ -4,46 +4,83 @@ from unittest.mock import patch
 
 from backend.app.services.model_summarizer import (
     DEFAULT_SUMMARIZATION_MODEL,
-    TRANSFORMER_SUMMARIZATION_TASK,
-    _load_local_model,
+    _load_summary_components,
     summarize_with_model,
 )
 
 
-class ModelSummarizerTests(unittest.TestCase):
-    def test_default_model_is_a_distilled_summarizer(self) -> None:
-        self.assertEqual(TRANSFORMER_SUMMARIZATION_TASK, "summarization")
-        self.assertEqual(DEFAULT_SUMMARIZATION_MODEL, "sshleifer/distilbart-cnn-12-6")
+class FakeTensor:
+    def to(self, device: str) -> "FakeTensor":
+        return self
 
-    def test_model_summary_runs_by_default(self) -> None:
-        summarizer = unittest.mock.Mock(return_value=[{"summary_text": "The donuts are large and consistently good."}])
+
+class FakeTokenizedInput(dict):
+    def __init__(self) -> None:
+        super().__init__({"input_ids": FakeTensor(), "attention_mask": FakeTensor()})
+
+    def to(self, device: str) -> "FakeTokenizedInput":
+        return self
+
+
+class FakeTokenizer:
+    def __call__(
+        self,
+        text: str,
+        max_length: int,
+        truncation: bool,
+        return_tensors: str,
+    ) -> FakeTokenizedInput:
+        self.text = text
+        self.max_length = max_length
+        self.truncation = truncation
+        self.return_tensors = return_tensors
+        return FakeTokenizedInput()
+
+    def decode(self, output: str, skip_special_tokens: bool) -> str:
+        self.skip_special_tokens = skip_special_tokens
+        return "Donuts are large, high quality, and pair well with matcha drinks."
+
+
+class FakeModel:
+    device = "cpu"
+
+    def generate(self, **kwargs: object) -> list[str]:
+        self.kwargs = kwargs
+        return ["summary-token"]
+
+
+class ModelSummarizerTests(unittest.TestCase):
+    def test_default_model_is_falconsai_text_summarization(self) -> None:
+        self.assertEqual(DEFAULT_SUMMARIZATION_MODEL, "Falconsai/text_summarization")
+
+    def test_summary_model_runs_by_default_with_direct_generation(self) -> None:
+        tokenizer = FakeTokenizer()
+        model = FakeModel()
 
         with patch.dict("os.environ", {}, clear=True), patch(
-            "backend.app.services.model_summarizer._get_summarizer",
-            return_value=summarizer,
+            "backend.app.services.model_summarizer._get_summary_components",
+            return_value=(tokenizer, model),
         ):
             result = summarize_with_model(
-                ["The product is great, but shipping was slow."],
+                ["Donuts are huge, consistent quality and taste great."],
                 fallback_summary="fallback summary",
             )
 
         self.assertTrue(result.summary.startswith("The review states that "))
-        self.assertIn("the donuts are large and consistently good", result.summary)
-        self.assertIn("This is because", result.summary)
+        self.assertIn("donuts are large", result.summary.casefold())
         self.assertEqual(result.summary_source, "transformer")
+        self.assertEqual(result.model_name, DEFAULT_SUMMARIZATION_MODEL)
         self.assertIsNone(result.fallback_reason)
-        _, kwargs = summarizer.call_args
-        self.assertEqual(kwargs["max_length"], 80)
-        self.assertEqual(kwargs["min_length"], 20)
-        self.assertNotIn("max_new_tokens", kwargs)
+        self.assertEqual(model.kwargs["max_new_tokens"], 80)
+        self.assertEqual(model.kwargs["min_new_tokens"], 20)
 
-    def test_model_summary_can_be_disabled(self) -> None:
+    def test_summary_model_can_be_disabled(self) -> None:
         with patch.dict("os.environ", {"REVIEWINSIGHT_ENABLE_MODEL_SUMMARY": "0"}, clear=True), patch(
-            "backend.app.services.model_summarizer._get_summarizer",
-            side_effect=AssertionError("model should not load when disabled"),
+            "backend.app.services.model_summarizer._get_summary_components",
+            side_effect=AssertionError("summary model should not load when disabled"),
         ):
             result = summarize_with_model(
-                ["The product is great, but shipping was slow."],
+                ["Donuts are huge, consistent quality and taste great."],
                 fallback_summary="fallback summary",
             )
 
@@ -51,7 +88,7 @@ class ModelSummarizerTests(unittest.TestCase):
         self.assertEqual(result.summary_source, "rule_based_fallback")
         self.assertEqual(result.fallback_reason, "model_summary_disabled")
 
-    def test_model_loader_can_download_by_default(self) -> None:
+    def test_loader_uses_seq2seq_classes_without_pipeline(self) -> None:
         calls: list[tuple[str, bool]] = []
 
         class FakeLoader:
@@ -63,14 +100,13 @@ class ModelSummarizerTests(unittest.TestCase):
         fake_transformers = SimpleNamespace(
             AutoModelForSeq2SeqLM=FakeLoader,
             AutoTokenizer=FakeLoader,
-            pipeline=lambda *args, **kwargs: "pipeline",
         )
 
         with patch.dict("os.environ", {}, clear=True), patch.dict(
             "sys.modules",
             {"transformers": fake_transformers},
-        ), patch("backend.app.services.model_summarizer.pipeline", None):
-            _load_local_model(DEFAULT_SUMMARIZATION_MODEL)
+        ), patch("backend.app.services.model_summarizer._summary_components", None):
+            _load_summary_components(DEFAULT_SUMMARIZATION_MODEL)
 
         self.assertEqual(
             calls,

@@ -2,7 +2,7 @@
 
 ReviewInsight is now a small MVP for analyzing one customer review at a time.
 
-The app has a FastAPI backend, a Streamlit frontend, and local SQLite history. The backend uses simple rule-based sentiment, topic, and urgency logic. It also tries the existing Hugging Face summary path and falls back to a rule-based summary if the model is unavailable or fails.
+The app has a FastAPI backend, a Streamlit frontend, and local SQLite history. The backend uses Hugging Face models for summary and sentiment with rule-based fallbacks, plus rule-based topic and urgency logic.
 
 ## Included Features
 
@@ -34,13 +34,19 @@ Optional import check:
 python -c "import fastapi, streamlit, requests, transformers, torch; print('imports ok')"
 ```
 
-The Hugging Face summary path is enabled by default. To use only the fast rule-based fallback summary, set this before starting the app:
+The Hugging Face summary path is enabled by default with `Falconsai/text_summarization`. This model is loaded directly with `AutoTokenizer` and `AutoModelForSeq2SeqLM` because Transformers v5 no longer supports the `summarization` pipeline task. To use only the rule-based summary fallback, set this before starting the app:
 
 ```powershell
 $env:REVIEWINSIGHT_ENABLE_MODEL_SUMMARY = "0"
 ```
 
-The default model is `sshleifer/distilbart-cnn-12-6`, a distilled BART summarizer. The app will download it through Transformers if it is not already cached. To force offline-only model loading, set:
+The Hugging Face sentiment path is also enabled by default. To use only the rule-based sentiment fallback, set:
+
+```powershell
+$env:REVIEWINSIGHT_ENABLE_MODEL_SENTIMENT = "0"
+```
+
+The default sentiment model is `distilbert-base-uncased-finetuned-sst-2-english`, loaded with the supported `sentiment-analysis` Transformers task. The app will download models through Transformers if they are not already cached. To force offline-only model loading, set:
 
 ```powershell
 $env:REVIEWINSIGHT_MODEL_LOCAL_ONLY = "1"
@@ -53,6 +59,8 @@ This is the easiest way to start both FastAPI and Streamlit:
 ```powershell
 python scripts\run_app.py
 ```
+
+The runner checks the summary and sentiment models before starting the backend and frontend. If a model is not cached yet, Transformers downloads it during this startup check so the first dashboard analysis request does not spend that time loading the model.
 
 Then open:
 

@@ -75,6 +75,14 @@ def render_result_tabs(result: dict[str, Any]) -> None:
     with sentiment_tab:
         st.metric("Sentiment", str(result.get("sentiment", "neutral")).title())
         st.metric("Sentiment Score", result.get("sentiment_score", 0))
+        source = str(result.get("sentiment_source", "rule_based_fallback")).replace("_", " ")
+        st.caption(f"Sentiment source: {source}")
+        if result.get("sentiment_model_name"):
+            st.caption(f"Sentiment model: {result['sentiment_model_name']}")
+        if result.get("sentiment_confidence") is not None:
+            st.caption(f"Sentiment confidence: {float(result['sentiment_confidence']):.2f}")
+        if result.get("sentiment_fallback_reason"):
+            st.caption(f"Sentiment fallback reason: {result['sentiment_fallback_reason']}")
 
     with topics_tab:
         topics = [str(topic) for topic in result.get("topics", []) if str(topic).strip()]
