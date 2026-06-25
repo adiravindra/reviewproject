@@ -23,7 +23,7 @@ def analyze_single_review(review: ReviewAnalysisRequest) -> ReviewAnalysisRespon
             detail=str(exc),
         ) from exc
 
-    # This MVP saves every analyzed review so the History page stays simple.
+    # save every analyzed review so the History page stays simple.
     save_review_analysis(result)
     return result
 

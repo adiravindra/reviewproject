@@ -68,4 +68,4 @@ streamlit run dashboard\streamlit_app.py
 
 ## Notes
 
-The model summary path is intentionally simple. If Transformers or the local model cannot load, the backend returns the rule-based summary and includes fallback metadata in the raw result.
+The model summary path is enabled by default with `sshleifer/distilbart-cnn-12-6`, a distilled BART summarizer. Set `REVIEWINSIGHT_ENABLE_MODEL_SUMMARY=0` before starting the app to use only the fast rule-based fallback summary, or `REVIEWINSIGHT_MODEL_LOCAL_ONLY=1` to prevent model downloads. If Transformers or the model cannot load, the backend returns the rule-based summary and includes fallback metadata in the raw result.

@@ -18,16 +18,6 @@ The app has a FastAPI backend, a Streamlit frontend, and local SQLite history. T
 - FastAPI routes for single-review analysis and history.
 - One helper script for starting the app.
 
-## Intentionally Removed
-
-- CSV upload.
-- Batch analysis.
-- Multi-page dashboards.
-- Trends, charts, metrics dashboards, and advanced analytics.
-- Advanced filtering and saved-run exploration.
-- Extra helper scripts.
-- Unused helper modules for batch insights and keyword dashboards.
-
 ## Install
 
 From the project folder:
@@ -42,6 +32,18 @@ Optional import check:
 
 ```powershell
 python -c "import fastapi, streamlit, requests, transformers, torch; print('imports ok')"
+```
+
+The Hugging Face summary path is enabled by default. To use only the fast rule-based fallback summary, set this before starting the app:
+
+```powershell
+$env:REVIEWINSIGHT_ENABLE_MODEL_SUMMARY = "0"
+```
+
+The default model is `sshleifer/distilbart-cnn-12-6`, a distilled BART summarizer. The app will download it through Transformers if it is not already cached. To force offline-only model loading, set:
+
+```powershell
+$env:REVIEWINSIGHT_MODEL_LOCAL_ONLY = "1"
 ```
 
 ## Run App

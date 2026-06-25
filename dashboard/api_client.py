@@ -4,6 +4,7 @@ import requests
 
 
 DEFAULT_API_BASE_URL = "http://127.0.0.1:8000"
+ANALYZE_TIMEOUT_SECONDS = 180
 
 
 class ApiClientError(Exception):
@@ -19,11 +20,19 @@ def analyze_review(
     if not cleaned_text:
         raise ApiClientError("Paste one review before analyzing.")
 
-    response = requests.post(
-        _api_url(api_base_url, "/analysis/single"),
-        json={"text": cleaned_text},
-        timeout=30,
-    )
+    try:
+        response = requests.post(
+            _api_url(api_base_url, "/analysis/single"),
+            json={"text": cleaned_text},
+            timeout=ANALYZE_TIMEOUT_SECONDS,
+        )
+    except requests.Timeout as exc:
+        raise ApiClientError(
+            "The backend timed out while analyzing this review. Try again, or restart the app if the backend is still warming up."
+        ) from exc
+    except requests.RequestException as exc:
+        raise ApiClientError("Could not reach the backend analysis service.") from exc
+
     return _parse_response(response)
 
 
