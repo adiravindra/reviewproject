@@ -69,22 +69,32 @@ def _get_summarizer(model_name: str) -> Any:
     global _summarizer_pipeline
 
     if _summarizer_pipeline is None:
-        _summarizer_pipeline = _pipeline_factory()(
+        pipeline_factory, tokenizer, model = _load_local_model(model_name)
+        _summarizer_pipeline = pipeline_factory(
             TRANSFORMER_SUMMARIZATION_TASK,
-            model=model_name,
-            local_files_only=True,
+            model=model,
+            tokenizer=tokenizer,
         )
     return _summarizer_pipeline
 
 
-def _pipeline_factory() -> Any:
+def _load_local_model(model_name: str) -> tuple[Any, Any, Any]:
     global pipeline
 
     if pipeline is None:
-        from transformers import pipeline as transformers_pipeline
+        from transformers import (
+            AutoModelForCausalLM,
+            AutoTokenizer,
+            pipeline as transformers_pipeline,
+        )
 
         pipeline = transformers_pipeline
-    return pipeline
+    else:
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    tokenizer = AutoTokenizer.from_pretrained(model_name, local_files_only=True)
+    model = AutoModelForCausalLM.from_pretrained(model_name, local_files_only=True)
+    return pipeline, tokenizer, model
 
 
 def _summarization_input(review_texts: list[str]) -> str:

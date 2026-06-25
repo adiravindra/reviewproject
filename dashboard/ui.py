@@ -52,14 +52,15 @@ def render_nav() -> None:
         """
         <nav class="ri-nav">
             <div class="ri-brand">ReviewInsight</div>
-            <div class="ri-links">
-                <a href="/">Analysis</a>
-                <a href="/History">History</a>
-            </div>
         </nav>
         """,
         unsafe_allow_html=True,
     )
+    analysis_col, history_col, spacer = st.columns([0.16, 0.16, 0.68])
+    with analysis_col:
+        st.page_link("streamlit_app.py", label="Analysis")
+    with history_col:
+        st.page_link("pages/1_History.py", label="History")
 
 
 def backend_url_input() -> str:

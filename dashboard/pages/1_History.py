@@ -21,6 +21,14 @@ else:
     items = history.get("items", [])
     rows = history_rows(items if isinstance(items, list) else [])
     if rows:
-        st.dataframe(rows, use_container_width=True, hide_index=True)
+        for row in rows:
+            with st.container(border=True):
+                st.caption(row["Timestamp"])
+                st.write(row["Review"])
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Sentiment", row["Sentiment"])
+                col2.metric("Topics", row["Topics"] or "General Feedback")
+                col3.metric("Urgency", row["Urgency"])
+                st.write(row["Summary"])
     else:
         st.info("No review history yet. Analyze a review on the Analysis page first.")
