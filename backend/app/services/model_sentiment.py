@@ -6,7 +6,7 @@ from backend.app.services.sentiment import SentimentResult, analyze_sentiment
 
 
 TRANSFORMER_SENTIMENT_TASK = "sentiment-analysis"
-DEFAULT_SENTIMENT_MODEL = "distilbert-base-uncased-finetuned-sst-2-english"
+DEFAULT_SENTIMENT_MODEL = "distilbert/distilbert-base-uncased-finetuned-sst-2-english"
 ENABLE_MODEL_SENTIMENT_ENV = "REVIEWINSIGHT_ENABLE_MODEL_SENTIMENT"
 MODEL_LOCAL_ONLY_ENV = "REVIEWINSIGHT_MODEL_LOCAL_ONLY"
 TRUE_VALUES = {"1", "true", "yes", "on"}
@@ -30,6 +30,8 @@ def analyze_sentiment_with_model(
 ) -> ModelSentimentResult:
     fallback = analyze_sentiment(text)
 
+    # Model sentiment is optional; rule-based sentiment keeps the app responsive
+    # when model files are unavailable.
     if not _model_sentiment_enabled():
         return _fallback(fallback, model_name, "model_sentiment_disabled")
 
@@ -67,6 +69,7 @@ def _get_sentiment_classifier(model_name: str) -> Any:
 
 
 def ensure_sentiment_model_ready(model_name: str = DEFAULT_SENTIMENT_MODEL) -> None:
+    # Used by the runner to fail early if the configured model cannot load.
     if _model_sentiment_enabled():
         _get_sentiment_classifier(model_name)
 
@@ -87,6 +90,8 @@ def _load_sentiment_pipeline(model_name: str) -> Any:
 
 
 def _parse_classifier_output(output: Any) -> tuple[str, float] | None:
+    # Transformers pipelines usually return a list with one label/score dict,
+    # but this accepts a bare dict to keep the boundary tolerant.
     if isinstance(output, list) and output and isinstance(output[0], dict):
         item = output[0]
     elif isinstance(output, dict):

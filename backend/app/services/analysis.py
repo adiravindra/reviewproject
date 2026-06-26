@@ -6,21 +6,24 @@ from backend.app.schemas.reviews import ReviewAnalysisResponse
 from backend.app.services.model_sentiment import analyze_sentiment_with_model
 from backend.app.services.model_summarizer import summarize_with_model
 from backend.app.services.processing import prepare_reviews
+from backend.app.services.sentiment import explain_sentiment
 from backend.app.services.summarization import summarize_review
 
 
 TOPIC_TERMS = {
+    "product/service quality": {"allergy", "food", "gluten", "meal", "product", "quality", "restaurant"},
     "pricing": {"billing", "charge", "cost", "expensive", "invoice", "payment", "price", "refund"},
     "bugs/crashes": {"bug", "buggy", "broken", "crash", "crashed", "crashes", "error", "freeze"},
     "performance": {"lag", "laggy", "load", "loading", "slow", "speed", "timeout"},
-    "UI/UX": {"confusing", "design", "easy", "interface", "layout", "navigation", "screen", "ui", "ux"},
+    "UI/UX": {"confusing", "design", "interface", "layout", "navigation", "screen", "ui", "ux"},
     "login/auth": {"auth", "authentication", "login", "password", "signin", "sign-in", "signup", "sign-up"},
     "support": {"agent", "help", "helpful", "response", "respond", "support", "ticket"},
-    "feature request": {"add", "feature", "missing", "option", "please", "request", "wish"},
+    "feature request": {"add", "feature", "missing", "please", "request", "wish"},
 }
 
 TOPIC_PHRASES = {
     "login/auth": {"cannot log in", "can't log in", "log in", "sign in", "sign up"},
+    "product/service quality": {"take out", "takeout", "gluten free"},
 }
 
 HIGH_URGENCY_TERMS = {
@@ -47,10 +50,15 @@ def analyze_review(text: str) -> ReviewAnalysisResponse:
     sentiment_result = analyze_sentiment_with_model(cleaned_text)
     urgency_score = _urgency_score(cleaned_text, sentiment_result.sentiment)
     sentiment = sentiment_result.sentiment
+    topics = _detect_topics(cleaned_text)
 
+    # Urgent neutral reviews are usually describing a problem, so surface them
+    # as negative for the dashboard.
     if sentiment == "neutral" and urgency_score >= 0.5:
         sentiment = "negative"
 
+    # Build a readable fallback first, then let the transformer replace it when
+    # the local model path succeeds.
     fallback_summary = summarize_review(cleaned_text)
     model_summary = summarize_with_model([cleaned_text], fallback_summary=fallback_summary)
 
@@ -60,7 +68,7 @@ def analyze_review(text: str) -> ReviewAnalysisResponse:
         text=cleaned_text,
         sentiment=sentiment,
         sentiment_score=sentiment_result.score,
-        topics=_detect_topics(cleaned_text),
+        topics=topics,
         urgency=_urgency_label(urgency_score),
         urgency_score=urgency_score,
         summary=model_summary.summary,
@@ -68,6 +76,12 @@ def analyze_review(text: str) -> ReviewAnalysisResponse:
         model_name=model_summary.model_name,
         fallback_reason=model_summary.fallback_reason,
         sentiment_source=sentiment_result.sentiment_source,
+        sentiment_explanation=explain_sentiment(
+            cleaned_text,
+            sentiment,
+            sentiment_result.score,
+            sentiment_result.confidence,
+        ),
         sentiment_model_name=sentiment_result.model_name,
         sentiment_confidence=sentiment_result.confidence,
         sentiment_fallback_reason=sentiment_result.fallback_reason,
@@ -75,6 +89,7 @@ def analyze_review(text: str) -> ReviewAnalysisResponse:
 
 
 def _tokens(text: str) -> set[str]:
+    # Topic and urgency scoring only need coarse word matches.
     return set(re.findall(r"[a-z][a-z-']+", text.casefold()))
 
 

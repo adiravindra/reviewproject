@@ -8,6 +8,7 @@ ANALYZE_TIMEOUT_SECONDS = 180
 
 
 class ApiClientError(Exception):
+    """User-facing error raised when Streamlit cannot complete an API call."""
     pass
 
 
@@ -49,6 +50,7 @@ def fetch_history(
 
 
 def _api_url(api_base_url: str, path: str) -> str:
+    # Normalize slashes so users can type either http://host or http://host/.
     return f"{api_base_url.rstrip('/')}/{path.lstrip('/')}"
 
 

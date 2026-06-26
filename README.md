@@ -8,11 +8,12 @@ The app has a FastAPI backend, a Streamlit frontend, and local SQLite history. T
 
 - Analysis page for one pasted review.
 - One `Analyze Review` button.
+- Loading feedback while the backend analyzes and saves a review.
 - Results shown in tabs:
-  - Sentiment
+  - Summary
+  - Sentiment Analysis
   - Topics / Categories
   - Urgency
-  - Summary
   - Raw Result / Debug Info
 - History page showing saved SQLite review analyses.
 - FastAPI routes for single-review analysis and history.
@@ -34,7 +35,13 @@ Optional import check:
 python -c "import fastapi, streamlit, requests, transformers, torch; print('imports ok')"
 ```
 
-The Hugging Face summary path is enabled by default with `Falconsai/text_summarization`. This model is loaded directly with `AutoTokenizer` and `AutoModelForSeq2SeqLM` because Transformers v5 no longer supports the `summarization` pipeline task. To use only the rule-based summary fallback, set this before starting the app:
+The Hugging Face summary path is enabled by default with `google/flan-t5-small`. The app prompts this instruction-tuned text-to-text model to write a short customer-review explanation instead of returning a near-copy of the review. To try a different compatible Hugging Face seq2seq model, set:
+
+```powershell
+$env:REVIEWINSIGHT_SUMMARY_MODEL = "google/flan-t5-base"
+```
+
+To use only the rule-based summary fallback, set this before starting the app:
 
 ```powershell
 $env:REVIEWINSIGHT_ENABLE_MODEL_SUMMARY = "0"
@@ -46,7 +53,7 @@ The Hugging Face sentiment path is also enabled by default. To use only the rule
 $env:REVIEWINSIGHT_ENABLE_MODEL_SENTIMENT = "0"
 ```
 
-The default sentiment model is `distilbert-base-uncased-finetuned-sst-2-english`, loaded with the supported `sentiment-analysis` Transformers task. The app will download models through Transformers if they are not already cached. To force offline-only model loading, set:
+The default sentiment model is `distilbert/distilbert-base-uncased-finetuned-sst-2-english`, loaded with the supported `sentiment-analysis` Transformers task. The app will download models through Transformers if they are not already cached. To force offline-only model loading, set:
 
 ```powershell
 $env:REVIEWINSIGHT_MODEL_LOCAL_ONLY = "1"

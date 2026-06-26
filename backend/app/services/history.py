@@ -14,6 +14,8 @@ from backend.app.services.db import connect
 # Save the full analysis JSON in SQLite.
 def save_review_analysis(result: ReviewAnalysisResponse) -> None:
     payload = model_to_dict(result)
+    # The aggregate columns keep the table extensible, while payload_json keeps
+    # the exact single-review result available for the History page.
     topic_counts = {topic: 1 for topic in result.topics}
     urgency_counts = {"low": 0, "medium": 0, "high": 0}
     urgency_counts[result.urgency] = 1
@@ -68,7 +70,11 @@ def get_history(limit: int = 50) -> HistoryResponse:
 
 
 def _payload(row: Any) -> dict[str, Any]:
-    payload = json.loads(str(row["payload_json"]))
+    # Guard against malformed stored JSON so one bad row does not break history.
+    try:
+        payload = json.loads(str(row["payload_json"]))
+    except json.JSONDecodeError:
+        return {}
     return payload if isinstance(payload, dict) else {}
 
 
