@@ -1,23 +1,74 @@
 # ReviewInsight
 
-ReviewInsight is now a small MVP for analyzing one customer review at a time.
+ReviewInsight is a small customer-review analysis app. It lets a user paste one review, sends it to a FastAPI backend, analyzes it with Hugging Face models, saves the result to SQLite, and displays a polished Streamlit dashboard with summary and sentiment insights.
 
-The app has a FastAPI backend, a Streamlit frontend, and local SQLite history. The backend uses Hugging Face models for summary and sentiment with rule-based fallbacks, plus rule-based topic and urgency logic.
+## What It Does
 
-## Included Features
+- Analyzes one pasted customer review at a time.
+- Generates a model-based review summary.
+- Classifies sentiment with a model and shows confidence when available.
+- Highlights positive, neutral, and negative keywords in the review text.
+- Saves each analysis to local SQLite history.
+- Provides a History page for previously analyzed reviews.
 
-- Analysis page for one pasted review.
-- One `Analyze Review` button.
-- Loading feedback while the backend analyzes and saves a review.
-- Results shown in tabs:
-  - Summary
-  - Sentiment Analysis
-  - Topics / Categories
-  - Urgency
-  - Raw Result / Debug Info
-- History page showing saved SQLite review analyses.
-- FastAPI routes for single-review analysis and history.
-- One helper script for starting the app.
+The app is model-first. Rule-based logic is used only as a fallback when a model cannot load, cannot run inference, or returns an invalid result.
+
+## Models
+
+- Summary model: `google/flan-t5-small`
+  - Loaded with `AutoTokenizer` and `AutoModelForSeq2SeqLM`.
+  - Prompted to generate a short business-owner-friendly customer review analysis.
+  - Override with `REVIEWINSIGHT_SUMMARY_MODEL` if you want another compatible seq2seq model.
+
+- Sentiment model: `distilbert/distilbert-base-uncased-finetuned-sst-2-english`
+  - Loaded through the Transformers `sentiment-analysis` pipeline.
+  - Produces positive/negative sentiment with a confidence score.
+
+Transformers downloads model files automatically if they are not already cached. Set `REVIEWINSIGHT_MODEL_LOCAL_ONLY=1` only when you want Transformers to use locally cached model files without downloading.
+
+## Project Structure
+
+```text
+backend/
+  app/
+    main.py                 FastAPI app setup
+    routers/reviews.py      API routes
+    services/analysis.py    Review analysis orchestration
+    services/model_*.py     Hugging Face model wrappers
+    services/history.py     SQLite history persistence
+dashboard/
+  streamlit_app.py          Main Analysis page
+  pages/1_History.py        History page
+  ui.py                     Shared Streamlit UI and styling
+scripts/
+  run_app.py                Starts backend and frontend together
+```
+
+For detailed system diagrams, see [docs/architecture.md](docs/architecture.md).
+
+## API Routes
+
+### `POST /analysis/single`
+
+Analyzes one review and saves the result to history.
+
+Request body:
+
+```json
+{
+  "text": "The product is easy to use, but shipping was slow."
+}
+```
+
+Response includes the cleaned review text, sentiment, sentiment score, summary, model source metadata, fallback reason if one was needed, and saved history status.
+
+### `GET /analysis/history`
+
+Returns saved review analyses from SQLite.
+
+Optional query parameter:
+
+- `limit`: number of history items to return, from `1` to `200`. Default is `50`.
 
 ## Install
 
@@ -35,39 +86,13 @@ Optional import check:
 python -c "import fastapi, streamlit, requests, transformers, torch; print('imports ok')"
 ```
 
-The Hugging Face summary path is enabled by default with `google/flan-t5-small`. The app prompts this instruction-tuned text-to-text model to write a short customer-review explanation instead of returning a near-copy of the review. To try a different compatible Hugging Face seq2seq model, set:
+## Run The App
 
-```powershell
-$env:REVIEWINSIGHT_SUMMARY_MODEL = "google/flan-t5-base"
-```
-
-To use only the rule-based summary fallback, set this before starting the app:
-
-```powershell
-$env:REVIEWINSIGHT_ENABLE_MODEL_SUMMARY = "0"
-```
-
-The Hugging Face sentiment path is also enabled by default. To use only the rule-based sentiment fallback, set:
-
-```powershell
-$env:REVIEWINSIGHT_ENABLE_MODEL_SENTIMENT = "0"
-```
-
-The default sentiment model is `distilbert/distilbert-base-uncased-finetuned-sst-2-english`, loaded with the supported `sentiment-analysis` Transformers task. The app will download models through Transformers if they are not already cached. To force offline-only model loading, set:
-
-```powershell
-$env:REVIEWINSIGHT_MODEL_LOCAL_ONLY = "1"
-```
-
-## Run App
-
-This is the easiest way to start both FastAPI and Streamlit:
+Start FastAPI and Streamlit together:
 
 ```powershell
 python scripts\run_app.py
 ```
-
-The runner checks the summary and sentiment models before starting the backend and frontend. If a model is not cached yet, Transformers downloads it during this startup check so the first dashboard analysis request does not spend that time loading the model.
 
 Then open:
 
@@ -75,40 +100,48 @@ Then open:
 http://127.0.0.1:8501
 ```
 
+The runner warms the summary and sentiment models before starting the app. If warmup fails, the app still starts; each API request tries the models again and falls back only if the model path fails.
+
 Press `Ctrl+C` in the terminal to stop both services.
 
-## Run Backend Manually
+## Run Manually
+
+Start the backend:
 
 ```powershell
 uvicorn backend.app.main:app --reload
 ```
 
-Analyze one review:
-
-```powershell
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/analysis/single -ContentType "application/json" -Body '{"text":"The product is easy to use, but shipping was slow."}'
-```
-
-Fetch history:
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/analysis/history
-```
-
-## Run Frontend Manually
-
-In a second terminal:
+In a second terminal, start the frontend:
 
 ```powershell
 streamlit run dashboard\streamlit_app.py
 ```
 
-Then open:
+Open:
 
 ```text
 http://localhost:8501
 ```
 
-## SQLite
+Manual API examples:
 
-The default SQLite database is `data/reviewinsight.db`. Set `REVIEWINSIGHT_DB_PATH` to use a different file.
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/analysis/single -ContentType "application/json" -Body '{"text":"The product is easy to use, but shipping was slow."}'
+```
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/analysis/history
+```
+
+## Configuration
+
+Optional environment variables:
+
+```powershell
+$env:REVIEWINSIGHT_SUMMARY_MODEL = "google/flan-t5-base"
+$env:REVIEWINSIGHT_MODEL_LOCAL_ONLY = "1"
+$env:REVIEWINSIGHT_DB_PATH = "data/reviewinsight.db"
+```
+
+The default SQLite database is `data/reviewinsight.db`.

@@ -14,9 +14,6 @@ class ReviewAnalysisResponse(BaseModel):
     text: str
     sentiment: str
     sentiment_score: int
-    topics: list[str]
-    urgency: str
-    urgency_score: float
     summary: str
     summary_source: str = "rule_based_fallback"
     model_name: str | None = None
@@ -34,8 +31,6 @@ class HistoryItem(BaseModel):
     created_at: str
     text: str
     sentiment: str
-    topics: list[str]
-    urgency: str
     summary: str
 
 

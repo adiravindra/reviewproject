@@ -17,8 +17,8 @@ These notes capture lightweight Hugging Face options for improving ReviewInsight
 ## Topics / Categories
 
 - Candidate approach: zero-shot classification with `facebook/bart-large-mnli` or a lighter DeBERTa zero-shot model. Use the existing topic labels as candidate labels and allow multiple matches.
-- Lightweight fallback: keep the current keyword rules when the zero-shot model is disabled or unavailable.
-- Practical next step: add an optional `REVIEWINSIGHT_ENABLE_MODEL_TOPICS` flag before changing the default behavior.
+- Lightweight fallback: keep the current keyword rules only if a future topic model is unavailable.
+- Practical next step: evaluate a topic model before changing the default behavior.
 
 ## Urgency
 

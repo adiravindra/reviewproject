@@ -12,12 +12,12 @@ from ui import (
 
 
 configure_page("Analysis")
-render_nav()
+render_nav("Analysis")
 
 # This is the main Streamlit page for running a single review analysis.
 render_page_intro(
     "Analysis",
-    "Paste one customer review, then review a clear summary, sentiment, topics, urgency, and saved history.",
+    "Paste one customer review, then review a clear summary and sentiment insights in one focused workspace.",
 )
 
 api_base_url = backend_url_input()

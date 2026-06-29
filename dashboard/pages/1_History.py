@@ -5,7 +5,7 @@ from ui import backend_url_input, configure_page, history_rows, render_error, re
 
 
 configure_page("History")
-render_nav()
+render_nav("History")
 
 # This page reads saved results from SQLite through the backend.
 render_page_intro("History", "Review previous analyses saved by the backend in local SQLite history.")
@@ -27,10 +27,10 @@ else:
             with st.container(border=True):
                 st.caption(row["Timestamp"])
                 st.write(row["Review"])
-                col1, col2, col3 = st.columns(3)
+                col1, col2 = st.columns([0.28, 0.72])
                 col1.metric("Sentiment", row["Sentiment"])
-                col2.metric("Topics", row["Topics"] or "General Feedback")
-                col3.metric("Urgency", row["Urgency"])
-                st.write(row["Summary"])
+                with col2:
+                    st.markdown("**Summary**")
+                    st.write(row["Summary"])
     else:
         st.info("No review history yet. Analyze a review on the Analysis page first.")

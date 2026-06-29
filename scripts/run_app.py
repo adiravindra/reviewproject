@@ -1,6 +1,7 @@
 import subprocess
 import sys
 from pathlib import Path
+from typing import Callable
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -35,21 +36,27 @@ FRONTEND_COMMAND = [
 
 
 def ensure_models_ready() -> None:
-    print("Checking local AI models before starting the app...")
-    print("Preparing summary model...")
-    ensure_summary_model_ready()
-    print("Preparing sentiment model...")
-    ensure_sentiment_model_ready()
-    print("Model check complete.")
+    print("Warming AI models before starting the app...")
+    _warm_model("summary", ensure_summary_model_ready)
+    _warm_model("sentiment", ensure_sentiment_model_ready)
+
+
+def _warm_model(label: str, warmup: Callable[[], None]) -> None:
+    try:
+        print(f"Preparing {label} model...")
+        warmup()
+    except Exception as exc:
+        print(
+            f"Could not warm the {label} model: {exc}. "
+            "The API will try the model again on request and use the fallback only if it still fails.",
+            file=sys.stderr,
+        )
+    else:
+        print(f"{label.title()} model ready.")
 
 
 def main() -> None:
-    try:
-        ensure_models_ready()
-    except Exception as exc:
-        print(f"Could not prepare the AI models: {exc}", file=sys.stderr)
-        print("The app was not started. Check your network connection or set REVIEWINSIGHT_MODEL_LOCAL_ONLY=1 if the models are already cached.", file=sys.stderr)
-        raise SystemExit(1) from exc
+    ensure_models_ready()
 
     backend = subprocess.Popen(BACKEND_COMMAND)
     frontend = subprocess.Popen(FRONTEND_COMMAND)

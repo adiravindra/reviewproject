@@ -1,19 +1,13 @@
 from dataclasses import dataclass
 import os
-from time import monotonic
 from typing import Any
 
 
 SUMMARY_MODEL_ENV = "REVIEWINSIGHT_SUMMARY_MODEL"
 DEFAULT_SUMMARIZATION_MODEL = os.getenv(SUMMARY_MODEL_ENV, "google/flan-t5-small")
-DEFAULT_MAX_INFERENCE_SECONDS = 20.0
 MAX_INPUT_CHARACTERS = 4000
-MIN_EXPLANATORY_WORDS = 35
-ENABLE_MODEL_SUMMARY_ENV = "REVIEWINSIGHT_ENABLE_MODEL_SUMMARY"
 MODEL_LOCAL_ONLY_ENV = "REVIEWINSIGHT_MODEL_LOCAL_ONLY"
 TRUE_VALUES = {"1", "true", "yes", "on"}
-FALSE_VALUES = {"0", "false", "no", "off"}
-ADVICE_PREFIXES = ("do not ", "don't ", "avoid ", "skip ", "never ")
 
 _summary_components: tuple[str, Any, Any] | None = None
 
@@ -30,15 +24,7 @@ def summarize_with_model(
     review_texts: list[str],
     fallback_summary: str,
     model_name: str = DEFAULT_SUMMARIZATION_MODEL,
-    max_inference_seconds: float = DEFAULT_MAX_INFERENCE_SECONDS,
 ) -> ModelSummaryResult:
-    # The model path is optional; every failure returns the rule-based summary
-    # so the app remains usable without downloaded model files.
-    if not _model_summary_enabled():
-        return _fallback(fallback_summary, model_name, "model_summary_disabled")
-
-    started_at = monotonic()
-
     try:
         tokenizer, model = _get_summary_components(model_name)
     except Exception as exc:
@@ -57,9 +43,11 @@ def summarize_with_model(
 
         output_ids = model.generate(
             **tokenized_input,
-            max_new_tokens=96,
-            min_new_tokens=16,
+            max_new_tokens=180,
+            min_new_tokens=50,
             num_beams=4,
+            length_penalty=0.9,
+            repetition_penalty=1.15,
             no_repeat_ngram_size=3,
             do_sample=False,
         )
@@ -67,19 +55,11 @@ def summarize_with_model(
     except Exception as exc:
         return _fallback(fallback_summary, model_name, f"model_inference_failed: {exc}")
 
-    elapsed = monotonic() - started_at
-    if elapsed > max_inference_seconds:
-        return _fallback(fallback_summary, model_name, f"model_inference_too_slow: {elapsed:.2f}s")
-
     summary = " ".join(str(summary).split()).strip()
     if not summary:
         return _fallback(fallback_summary, model_name, "model_returned_empty_summary")
 
     cleaned_summary = _clean_generated_summary(summary)
-    quality_issue = _summary_quality_issue(cleaned_summary)
-    if quality_issue:
-        return _fallback(fallback_summary, model_name, quality_issue)
-
     return ModelSummaryResult(
         summary=cleaned_summary,
         summary_source="transformer",
@@ -98,8 +78,7 @@ def _get_summary_components(model_name: str) -> tuple[Any, Any]:
 
 def ensure_summary_model_ready(model_name: str = DEFAULT_SUMMARIZATION_MODEL) -> None:
     # The runner calls this before launching the UI to avoid a slow first click.
-    if _model_summary_enabled():
-        _get_summary_components(model_name)
+    _get_summary_components(model_name)
 
 
 def _load_summary_components(model_name: str) -> tuple[Any, Any]:
@@ -117,11 +96,13 @@ def _summarization_input(review_texts: list[str], model_name: str = DEFAULT_SUMM
     review_text = joined[:MAX_INPUT_CHARACTERS]
     if _uses_instruction_prompt(model_name):
         return (
-            "Write a customer review analysis for a business owner in exactly three natural sentences. "
-            "Sentence 1 must explain what the customer experienced. "
-            "Sentence 2 must explain why the customer likely felt that way, using the concrete details in the review. "
-            "Sentence 3 must explain the overall takeaway for the business. "
-            "Do not give advice directly to the customer, and do not simply quote or copy the review.\n\n"
+            "Write a detailed customer review analysis for a business owner in 3 to 4 natural sentences. "
+            "Capture the full meaning of the review instead of copying one sentence from it. "
+            "Mention the main praise or complaint points with concrete details, including pricing, communication, "
+            "punctuality, flexibility, professionalism, quality, and the overall customer experience when those "
+            "details appear. "
+            "Explain why the customer likely felt that way and the overall takeaway for the business. "
+            "Do not give advice directly to the customer.\n\n"
             f"Review: {review_text}\n\nAnalysis:"
         )
     return review_text
@@ -138,28 +119,10 @@ def _clean_generated_summary(text: str) -> str:
     return cleaned if cleaned.endswith((".", "!", "?")) else f"{cleaned}."
 
 
-def _summary_quality_issue(summary: str) -> str | None:
-    # Short advice-like outputs are common with tiny instruction models; they are
-    # less useful than the local explanatory fallback for this dashboard.
-    words = summary.split()
-    if len(words) < MIN_EXPLANATORY_WORDS:
-        return f"model_summary_too_short: {len(words)} words"
-    if summary.casefold().startswith(ADVICE_PREFIXES):
-        return "model_summary_advice_instead_of_analysis"
-    return None
-
-
 def _uses_instruction_prompt(model_name: str) -> bool:
     # FLAN/T5 checkpoints respond better when the task is phrased as an instruction.
     normalized_name = model_name.casefold()
     return "flan" in normalized_name or "t5" in normalized_name
-
-
-def _model_summary_enabled() -> bool:
-    configured_value = os.getenv(ENABLE_MODEL_SUMMARY_ENV, "").strip().casefold()
-    if configured_value in FALSE_VALUES:
-        return False
-    return True
 
 
 def _model_local_files_only() -> bool:

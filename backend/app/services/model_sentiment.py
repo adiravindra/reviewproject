@@ -7,10 +7,8 @@ from backend.app.services.sentiment import SentimentResult, analyze_sentiment
 
 TRANSFORMER_SENTIMENT_TASK = "sentiment-analysis"
 DEFAULT_SENTIMENT_MODEL = "distilbert/distilbert-base-uncased-finetuned-sst-2-english"
-ENABLE_MODEL_SENTIMENT_ENV = "REVIEWINSIGHT_ENABLE_MODEL_SENTIMENT"
 MODEL_LOCAL_ONLY_ENV = "REVIEWINSIGHT_MODEL_LOCAL_ONLY"
 TRUE_VALUES = {"1", "true", "yes", "on"}
-FALSE_VALUES = {"0", "false", "no", "off"}
 
 pipeline: Any | None = None
 _sentiment_classifier: Any | None = None
@@ -29,11 +27,6 @@ def analyze_sentiment_with_model(
     model_name: str = DEFAULT_SENTIMENT_MODEL,
 ) -> ModelSentimentResult:
     fallback = analyze_sentiment(text)
-
-    # Model sentiment is optional; rule-based sentiment keeps the app responsive
-    # when model files are unavailable.
-    if not _model_sentiment_enabled():
-        return _fallback(fallback, model_name, "model_sentiment_disabled")
 
     try:
         classifier = _get_sentiment_classifier(model_name)
@@ -70,8 +63,7 @@ def _get_sentiment_classifier(model_name: str) -> Any:
 
 def ensure_sentiment_model_ready(model_name: str = DEFAULT_SENTIMENT_MODEL) -> None:
     # Used by the runner to fail early if the configured model cannot load.
-    if _model_sentiment_enabled():
-        _get_sentiment_classifier(model_name)
+    _get_sentiment_classifier(model_name)
 
 
 def _load_sentiment_pipeline(model_name: str) -> Any:
@@ -121,13 +113,6 @@ def _confidence_to_score(sentiment: str, confidence: float) -> int:
     if sentiment == "neutral":
         return 0
     return score
-
-
-def _model_sentiment_enabled() -> bool:
-    configured_value = os.getenv(ENABLE_MODEL_SENTIMENT_ENV, "").strip().casefold()
-    if configured_value in FALSE_VALUES:
-        return False
-    return True
 
 
 def _model_local_files_only() -> bool:

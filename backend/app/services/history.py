@@ -14,11 +14,10 @@ from backend.app.services.db import connect
 # Save the full analysis JSON in SQLite.
 def save_review_analysis(result: ReviewAnalysisResponse) -> None:
     payload = model_to_dict(result)
-    # The aggregate columns keep the table extensible, while payload_json keeps
-    # the exact single-review result available for the History page.
-    topic_counts = {topic: 1 for topic in result.topics}
+    # Legacy aggregate columns stay populated for database compatibility, while
+    # payload_json keeps the exact single-review result used by the History page.
+    topic_counts: dict[str, int] = {}
     urgency_counts = {"low": 0, "medium": 0, "high": 0}
-    urgency_counts[result.urgency] = 1
 
     with closing(connect()) as connection:
         connection.execute(
@@ -45,7 +44,7 @@ def save_review_analysis(result: ReviewAnalysisResponse) -> None:
                 json.dumps({result.sentiment: 1}, sort_keys=True),
                 json.dumps(topic_counts, sort_keys=True),
                 json.dumps(urgency_counts, sort_keys=True),
-                result.urgency_score,
+                0.0,
                 result.summary,
                 json.dumps(payload, sort_keys=True),
             ),
@@ -84,7 +83,5 @@ def _history_item_from_payload(payload: dict[str, Any]) -> HistoryItem:
         created_at=str(payload.get("created_at", "")),
         text=str(payload.get("text", "")),
         sentiment=str(payload.get("sentiment", "neutral")),
-        topics=[str(topic) for topic in payload.get("topics", [])],
-        urgency=str(payload.get("urgency", "low")),
         summary=str(payload.get("summary", "")),
     )

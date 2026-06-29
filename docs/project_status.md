@@ -4,7 +4,7 @@
 
 ReviewInsight is an MVP customer review analysis dashboard. It analyzes one pasted review at a time, saves the result to SQLite, and shows saved review history.
 
-The goal is clarity over breadth. The project no longer supports CSV uploads, batch analysis, charts, trends, or multi-page dashboards.
+The goal is clarity over breadth. The project no longer supports CSV uploads, batch analysis, charts, trends, test scaffolding, or multi-page dashboards.
 
 ## Current Features
 
@@ -15,14 +15,11 @@ The goal is clarity over breadth. The project no longer supports CSV uploads, ba
   - Analysis
   - History
 - Analysis output tabs:
-  - Sentiment
-  - Topics / Categories
-  - Urgency
-  - Summary
-  - Raw Result / Debug Info
+  - Summary & Sentiment
+  - Raw Result
+- Keyword highlighting for positive, neutral, and negative sentiment signals.
 - SQLite history at `data/reviewinsight.db` by default.
-- Hugging Face summary and sentiment analysis with rule-based fallbacks.
-- Rule-based topics and urgency.
+- Hugging Face summary and sentiment analysis, with rule-based fallback only when a model fails.
 - One app runner script at `scripts/run_app.py`.
 
 ## How To Run The App
@@ -62,10 +59,10 @@ streamlit run dashboard\streamlit_app.py
 2. User pastes one review.
 3. Streamlit sends `POST /analysis/single`.
 4. FastAPI analyzes the review and saves it to SQLite.
-5. Streamlit displays the result in tabs.
+5. Streamlit displays the summary, sentiment, and highlighted review text together.
 6. User opens the History page.
 7. Streamlit calls `GET /analysis/history` and displays saved reviews.
 
 ## Notes
 
-The model summary path is enabled by default with `Falconsai/text_summarization`, loaded directly through `AutoTokenizer` and `AutoModelForSeq2SeqLM` because Transformers v5 no longer supports the `summarization` pipeline task. The model sentiment path is enabled by default with `distilbert-base-uncased-finetuned-sst-2-english` and the supported `sentiment-analysis` Transformers task. Set `REVIEWINSIGHT_ENABLE_MODEL_SUMMARY=0` or `REVIEWINSIGHT_ENABLE_MODEL_SENTIMENT=0` before starting the app to use rule-based fallbacks, or `REVIEWINSIGHT_MODEL_LOCAL_ONLY=1` to prevent model downloads.
+The summary path uses `google/flan-t5-small`, loaded directly through `AutoTokenizer` and `AutoModelForSeq2SeqLM`. The sentiment path uses `distilbert/distilbert-base-uncased-finetuned-sst-2-english` with the supported `sentiment-analysis` Transformers task. Set `REVIEWINSIGHT_MODEL_LOCAL_ONLY=1` only when you want Transformers to use locally cached model files without downloading.
