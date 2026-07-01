@@ -4,8 +4,10 @@ from backend.app.schemas.reviews import (
     HistoryResponse,
     ReviewAnalysisRequest,
     ReviewAnalysisResponse,
+    ReviewBatchAnalysisRequest,
+    ReviewReportResponse,
 )
-from backend.app.services.analysis import analyze_review
+from backend.app.services.analysis import analyze_review, analyze_reviews
 from backend.app.services.history import get_history, save_review_analysis
 
 
@@ -26,6 +28,17 @@ def analyze_single_review(review: ReviewAnalysisRequest) -> ReviewAnalysisRespon
     # save every analyzed review so the History page stays simple.
     save_review_analysis(result)
     return result
+
+
+@router.post("/analysis/batch", response_model=ReviewReportResponse)
+def analyze_review_batch(request: ReviewBatchAnalysisRequest) -> ReviewReportResponse:
+    try:
+        return analyze_reviews(request.texts)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
 
 
 # Return the saved reviews for the Streamlit History page.

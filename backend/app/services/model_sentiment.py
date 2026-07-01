@@ -2,16 +2,23 @@ from dataclasses import dataclass
 import os
 from typing import Any
 
+from backend.app.services.model_runtime import resolve_inference_device
 from backend.app.services.sentiment import SentimentResult, analyze_sentiment
 
 
 TRANSFORMER_SENTIMENT_TASK = "sentiment-analysis"
-DEFAULT_SENTIMENT_MODEL = "distilbert/distilbert-base-uncased-finetuned-sst-2-english"
+SENTIMENT_MODEL_ENV = "REVIEWINSIGHT_SENTIMENT_MODEL"
+DEFAULT_SENTIMENT_MODEL = os.getenv(
+    SENTIMENT_MODEL_ENV,
+    "cardiffnlp/twitter-roberta-base-sentiment-latest",
+)
 MODEL_LOCAL_ONLY_ENV = "REVIEWINSIGHT_MODEL_LOCAL_ONLY"
+SENTIMENT_BATCH_SIZE_ENV = "REVIEWINSIGHT_SENTIMENT_BATCH_SIZE"
 TRUE_VALUES = {"1", "true", "yes", "on"}
+DEFAULT_SENTIMENT_BATCH_SIZE = 16
 
 pipeline: Any | None = None
-_sentiment_classifier: Any | None = None
+_sentiment_classifier: tuple[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -26,39 +33,64 @@ def analyze_sentiment_with_model(
     text: str,
     model_name: str = DEFAULT_SENTIMENT_MODEL,
 ) -> ModelSentimentResult:
-    fallback = analyze_sentiment(text)
+    return analyze_sentiments_with_model([text], model_name=model_name)[0]
+
+
+def analyze_sentiments_with_model(
+    texts: list[str],
+    model_name: str = DEFAULT_SENTIMENT_MODEL,
+) -> list[ModelSentimentResult]:
+    if not texts:
+        return []
+
+    fallbacks = [analyze_sentiment(text) for text in texts]
 
     try:
         classifier = _get_sentiment_classifier(model_name)
     except Exception as exc:
-        return _fallback(fallback, model_name, f"model_load_failed: {exc}")
+        return [_fallback(fallback, model_name, f"model_load_failed: {exc}") for fallback in fallbacks]
 
     try:
-        output = classifier(text[:4000])
+        output = classifier(
+            [text[:4000] for text in texts],
+            batch_size=_sentiment_batch_size(),
+            truncation=True,
+        )
     except Exception as exc:
-        return _fallback(fallback, model_name, f"model_inference_failed: {exc}")
+        return [_fallback(fallback, model_name, f"model_inference_failed: {exc}") for fallback in fallbacks]
 
-    parsed = _parse_classifier_output(output)
-    if parsed is None:
-        return _fallback(fallback, model_name, "model_returned_invalid_sentiment")
+    outputs = output if isinstance(output, list) else [output]
+    results: list[ModelSentimentResult] = []
+    for text, fallback, item in zip(texts, fallbacks, outputs, strict=False):
+        parsed = _parse_classifier_output(item)
+        if parsed is None:
+            results.append(_fallback(fallback, model_name, "model_returned_invalid_sentiment"))
+            continue
 
-    sentiment, confidence = parsed
-    return ModelSentimentResult(
-        text=text,
-        sentiment=sentiment,
-        score=_confidence_to_score(sentiment, confidence),
-        sentiment_source="transformer",
-        model_name=model_name,
-        confidence=confidence,
-    )
+        sentiment, confidence = parsed
+        results.append(
+            ModelSentimentResult(
+                text=text,
+                sentiment=sentiment,
+                score=_confidence_to_score(sentiment, confidence),
+                sentiment_source="transformer",
+                model_name=model_name,
+                confidence=confidence,
+            )
+        )
+
+    if len(results) < len(texts):
+        for fallback in fallbacks[len(results) :]:
+            results.append(_fallback(fallback, model_name, "model_returned_incomplete_sentiment_batch"))
+    return results
 
 
 def _get_sentiment_classifier(model_name: str) -> Any:
     global _sentiment_classifier
 
-    if _sentiment_classifier is None:
-        _sentiment_classifier = _load_sentiment_pipeline(model_name)
-    return _sentiment_classifier
+    if _sentiment_classifier is None or _sentiment_classifier[0] != model_name:
+        _sentiment_classifier = (model_name, _load_sentiment_pipeline(model_name))
+    return _sentiment_classifier[1]
 
 
 def ensure_sentiment_model_ready(model_name: str = DEFAULT_SENTIMENT_MODEL) -> None:
@@ -74,9 +106,11 @@ def _load_sentiment_pipeline(model_name: str) -> Any:
 
         pipeline = transformers_pipeline
 
+    device_settings = resolve_inference_device()
     return pipeline(
         TRANSFORMER_SENTIMENT_TASK,
         model=model_name,
+        device=device_settings.pipeline_device,
         local_files_only=_model_local_files_only(),
     )
 
@@ -97,11 +131,11 @@ def _parse_classifier_output(output: Any) -> tuple[str, float] | None:
     except (TypeError, ValueError):
         confidence = 0.0
 
-    if "positive" in label or label in {"label_1", "pos"}:
+    if label in {"label_2", "pos"} or "positive" in label:
         return "positive", confidence
-    if "negative" in label or label in {"label_0", "neg"}:
+    if label in {"label_0", "neg"} or "negative" in label:
         return "negative", confidence
-    if "neutral" in label:
+    if label == "label_1" or "neutral" in label:
         return "neutral", confidence
     return None
 
@@ -117,6 +151,13 @@ def _confidence_to_score(sentiment: str, confidence: float) -> int:
 
 def _model_local_files_only() -> bool:
     return os.getenv(MODEL_LOCAL_ONLY_ENV, "").strip().casefold() in TRUE_VALUES
+
+
+def _sentiment_batch_size() -> int:
+    try:
+        return max(1, int(os.getenv(SENTIMENT_BATCH_SIZE_ENV, str(DEFAULT_SENTIMENT_BATCH_SIZE))))
+    except ValueError:
+        return DEFAULT_SENTIMENT_BATCH_SIZE
 
 
 def _fallback(fallback: SentimentResult, model_name: str, reason: str) -> ModelSentimentResult:
