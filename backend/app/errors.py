@@ -51,3 +51,13 @@ async def request_validation_error_handler(
         status_code=422,
     )
     return JSONResponse(status_code=error.status_code, content=error.envelope())
+
+
+async def unexpected_error_handler(_: Request, __: Exception) -> JSONResponse:
+    error = AppError(
+        code="scrape_failed",
+        message="The request could not be completed safely.",
+        stage="request",
+        status_code=500,
+    )
+    return JSONResponse(status_code=error.status_code, content=error.envelope())
