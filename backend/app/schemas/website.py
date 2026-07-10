@@ -92,9 +92,9 @@ class ReviewMetrics(BaseModel):
 
 
 class EvidenceItem(BaseModel):
-    label: str
-    summary: str
-    review_ids: list[str] = Field(default_factory=list)
+    label: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+    review_ids: list[str] = Field(min_length=1)
 
 
 class ReviewSentiment(BaseModel):
@@ -103,7 +103,7 @@ class ReviewSentiment(BaseModel):
 
 
 class BatchAnalysisOutput(BaseModel):
-    sentiments: list[ReviewSentiment]
+    sentiments: list[ReviewSentiment] = Field(min_length=1)
     positive_themes: list[EvidenceItem] = Field(default_factory=list)
     complaints: list[EvidenceItem] = Field(default_factory=list)
     aspects: list[EvidenceItem] = Field(default_factory=list)
@@ -111,12 +111,12 @@ class BatchAnalysisOutput(BaseModel):
 
 
 class SynthesisOutput(BaseModel):
-    executive_summary: str
+    executive_summary: str = Field(min_length=1)
     strengths: list[EvidenceItem] = Field(default_factory=list)
     complaints: list[EvidenceItem] = Field(default_factory=list)
     aspects: list[EvidenceItem] = Field(default_factory=list)
     opportunities: list[EvidenceItem] = Field(default_factory=list)
-    representative_review_ids: list[str] = Field(default_factory=list)
+    representative_review_ids: list[str] = Field(min_length=1)
 
 
 class RepresentativeReview(BaseModel):
