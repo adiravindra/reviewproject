@@ -62,6 +62,22 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.llm_model, "llama-3.3-70b-versatile")
         self.assertEqual(settings.db_path, Path("tmp/custom.db"))
 
+    def test_environment_cannot_weaken_minimum_collection_warnings(self) -> None:
+        from backend.app.settings import Settings
+
+        with patch.dict(
+            os.environ,
+            {
+                "REVIEWINSIGHT_MIN_REVIEWS": "1",
+                "REVIEWINSIGHT_LOW_SAMPLE_THRESHOLD": "1",
+            },
+            clear=True,
+        ):
+            settings = Settings.from_env()
+
+        self.assertEqual(settings.min_reviews, 2)
+        self.assertEqual(settings.low_sample_threshold, 5)
+
 
 if __name__ == "__main__":
     unittest.main()

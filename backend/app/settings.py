@@ -94,9 +94,9 @@ class Settings:
                 HARD_OVERALL_DEADLINE_SECONDS,
                 HARD_OVERALL_DEADLINE_SECONDS,
             ),
-            min_reviews=_bounded_int("REVIEWINSIGHT_MIN_REVIEWS", 2, 2),
-            low_sample_threshold=_bounded_int(
-                "REVIEWINSIGHT_LOW_SAMPLE_THRESHOLD", 5, 5
+            min_reviews=_bounded_floor_int("REVIEWINSIGHT_MIN_REVIEWS", 2, HARD_MAX_REVIEWS),
+            low_sample_threshold=_bounded_floor_int(
+                "REVIEWINSIGHT_LOW_SAMPLE_THRESHOLD", 5, HARD_MAX_REVIEWS
             ),
             llm_provider=provider,
             llm_model=os.getenv("REVIEWINSIGHT_LLM_MODEL", default_model).strip() or default_model,
@@ -123,3 +123,11 @@ def _bounded_float(name: str, default: float, ceiling: float) -> float:
     except ValueError:
         return default
     return min(value, ceiling) if value > 0 else default
+
+
+def _bounded_floor_int(name: str, default: int, ceiling: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+    return max(default, min(value, ceiling)) if value > 0 else default

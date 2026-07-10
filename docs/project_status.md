@@ -1,68 +1,33 @@
 # ReviewInsight Project Status
 
-## Simplified Scope
+Status: website review intelligence proof of concept implemented on July 10, 2026.
 
-ReviewInsight is an MVP customer review analysis dashboard. It analyzes one pasted review at a time, saves the result to SQLite, and shows saved review history.
+## Active product surface
 
-The goal is clarity over breadth. The project no longer supports CSV uploads, batch analysis, charts, trends, test scaffolding, or multi-page dashboards.
+- `POST /analysis/website`: synchronous public URL analysis.
+- `GET /analysis/history`: website-level saved-run summaries.
+- `GET /analysis/history/{run_id}`: exact stored report retrieval.
+- Streamlit Analysis page: public URL input and complete website dashboard.
+- Streamlit History page: saved website summaries and stored report loading.
 
-## Current Features
+No other analysis workflow is active.
 
-- FastAPI backend with:
-  - `POST /analysis/single`
-  - `GET /analysis/history`
-- Streamlit frontend with two pages:
-  - Analysis
-  - History
-- Analysis output tabs:
-  - Summary & Sentiment
-  - Raw Result
-- Keyword highlighting for positive, neutral, and negative sentiment signals.
-- SQLite history at `data/reviewinsight.db` by default.
-- Hugging Face summary and sentiment analysis, with rule-based fallback only when a model fails.
-- One app runner script at `scripts/run_app.py`.
+## Implemented boundaries
 
-## How To Run The App
+- SSRF-aware public URL/DNS checks and redirect revalidation.
+- Bounded streamed static HTML fetching with page, byte, redirect, timeout, review, and deadline limits.
+- Ordered scraper registry with JSON-LD first and conservative static HTML second.
+- Cleaning, 1–5 rating normalization, stable internal IDs, case-insensitive exact deduplication, and post-cleaning review caps.
+- LangChain-only structured batch/synthesis analysis with Google Gemini default and Groq configuration.
+- Exact sentiment-ID coverage, supporting-ID validation, one budget-aware invalid-output retry, and representative-ID text resolution.
+- Code-derived ratings, distributions, review counts, sentiment counts, and overall sentiment.
+- Save-after-validation SQLite persistence and website-level history.
+- Structured loading, success, warning, failure, and stored-history UI states.
 
-```powershell
-python scripts\run_app.py
-```
+## Verified scope
 
-The runner checks and loads the summary and sentiment models before starting FastAPI and Streamlit. Then open `http://127.0.0.1:8501`.
+- Deterministic automated fixtures cover direct, list, nested JSON-LD, semantic review cards, pagination, failures, partial success, LLM contracts, API contracts, persistence, frontend helpers, and end-to-end assembly.
+- The static collection path reproduced five reviews from `https://web-scraping.dev/product/1` on July 10, 2026.
+- No broad compatibility is claimed. JavaScript-only and protected sources remain outside the proof-of-concept scope.
 
-## How To Run Backend Manually
-
-```powershell
-uvicorn backend.app.main:app --reload
-```
-
-## How To Run Frontend Manually
-
-```powershell
-streamlit run dashboard\streamlit_app.py
-```
-
-## What Was Removed
-
-- CSV upload.
-- API payload and batch analysis flows.
-- Overview, Review Details, Sentiment, Topics, Urgency, and Summaries dashboard pages.
-- Charting and trend views.
-- Advanced history filtering and run-detail exploration.
-- Extra helper scripts.
-- Batch insights and keyword-dashboard helper modules.
-- Unneeded dependencies for pandas, Plotly, matplotlib, scikit-learn, and multipart uploads.
-
-## Current Data Flow
-
-1. User opens the Analysis page.
-2. User pastes one review.
-3. Streamlit sends `POST /analysis/single`.
-4. FastAPI analyzes the review and saves it to SQLite.
-5. Streamlit displays the summary, sentiment, and highlighted review text together.
-6. User opens the History page.
-7. Streamlit calls `GET /analysis/history` and displays saved reviews.
-
-## Notes
-
-The summary path uses `google/flan-t5-small`, loaded directly through `AutoTokenizer` and `AutoModelForSeq2SeqLM`. The sentiment path uses `distilbert/distilbert-base-uncased-finetuned-sst-2-english` with the supported `sentiment-analysis` Transformers task. Set `REVIEWINSIGHT_MODEL_LOCAL_ONLY=1` only when you want Transformers to use locally cached model files without downloading.
+See [the README](../README.md) for setup and [the architecture guide](architecture.md) for system diagrams.
