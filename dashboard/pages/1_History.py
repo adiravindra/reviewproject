@@ -6,31 +6,25 @@ from ui import backend_url_input, configure_page, history_rows, render_error, re
 
 configure_page("History")
 render_nav("History")
-
-# This page reads saved results from SQLite through the backend.
-render_page_intro("History", "Review previous analyses saved by the backend in local SQLite history.")
+render_page_intro("Website History", "Review completed website-level analyses stored by the backend.")
 
 api_base_url = backend_url_input()
 st.session_state["api_base_url"] = api_base_url
 
 try:
-    # History is fetched once per page render and displayed as simple cards.
-    history = fetch_history(api_base_url=api_base_url)
+    history = fetch_history(api_base_url)
 except ApiClientError as exc:
     render_error(exc)
 else:
     items = history.get("items", [])
     rows = history_rows(items if isinstance(items, list) else [])
-    if rows:
-        # Plain cards are easier for beginners to understand than a data grid.
-        for row in rows:
-            with st.container(border=True):
-                st.caption(row["Timestamp"])
-                st.write(row["Review"])
-                col1, col2 = st.columns([0.28, 0.72])
-                col1.metric("Sentiment", row["Sentiment"])
-                with col2:
-                    st.markdown("**Summary**")
-                    st.write(row["Summary"])
-    else:
-        st.info("No review history yet. Analyze a review on the Analysis page first.")
+    if not rows:
+        st.info("No website analyses have been saved yet.")
+    for row in rows:
+        with st.container(border=True):
+            st.caption(row["Timestamp"])
+            st.subheader(row["Source"])
+            st.write(row["Summary"])
+            reviews, sentiment = st.columns(2)
+            reviews.metric("Reviews", row["Reviews"])
+            sentiment.metric("Sentiment", row["Sentiment"])

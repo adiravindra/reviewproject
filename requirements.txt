@@ -6,8 +6,10 @@ uvicorn
 requests
 streamlit
 
-# Optional local model summary
-transformers>=4.37
-torch
-accelerate
-bitsandbytes
+# Static review extraction
+beautifulsoup4
+
+# LangChain providers
+langchain-core
+langchain-google-genai
+langchain-groq

@@ -1,14 +1,10 @@
 import subprocess
 import sys
 from pathlib import Path
-from typing import Callable
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-
-from backend.app.services.model_sentiment import ensure_sentiment_model_ready  # noqa: E402
-from backend.app.services.model_summarizer import ensure_summary_model_ready  # noqa: E402
 
 
 # One tiny helper script to run the backend and frontend together.
@@ -35,29 +31,7 @@ FRONTEND_COMMAND = [
 ]
 
 
-def ensure_models_ready() -> None:
-    print("Warming AI models before starting the app...")
-    _warm_model("summary", ensure_summary_model_ready)
-    _warm_model("sentiment", ensure_sentiment_model_ready)
-
-
-def _warm_model(label: str, warmup: Callable[[], None]) -> None:
-    try:
-        print(f"Preparing {label} model...")
-        warmup()
-    except Exception as exc:
-        print(
-            f"Could not warm the {label} model: {exc}. "
-            "The API will try the model again on request and use the fallback only if it still fails.",
-            file=sys.stderr,
-        )
-    else:
-        print(f"{label.title()} model ready.")
-
-
 def main() -> None:
-    ensure_models_ready()
-
     backend = subprocess.Popen(BACKEND_COMMAND)
     frontend = subprocess.Popen(FRONTEND_COMMAND)
 
