@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import Mock
 
+from backend.app.errors import AnalysisError
 from backend.app.models import AgentInsights, CollectionResult, Review, ReviewSentiment, SourceInfo
 from backend.app.service import calculate_metrics, run_analysis
 
@@ -76,19 +77,64 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(metrics.rating_distribution, {str(star): 0 for star in range(1, 6)})
 
     def test_pipeline_calls_each_stage_once_and_returns_contract(self):
-        collector = Mock(return_value=sample_collection())
-        analyzer = Mock(return_value=sample_insights())
+        events = []
+        credential_validator = Mock(
+            side_effect=lambda provider: events.append(("validate", provider))
+        )
+        collector = Mock(
+            side_effect=lambda url: (
+                events.append(("collect", url)),
+                sample_collection(),
+            )[1]
+        )
+        analyzer = Mock(
+            side_effect=lambda reviews, provider: (
+                events.append(("analyze", provider)),
+                sample_insights(),
+            )[1]
+        )
         result = run_analysis(
             "https://example.com/product",
             "google",
+            credential_validator=credential_validator,
             collector=collector,
             analyzer=analyzer,
         )
+        credential_validator.assert_called_once_with("google")
         collector.assert_called_once_with("https://example.com/product")
         analyzer.assert_called_once_with(sample_collection().reviews, "google")
+        self.assertEqual(
+            events,
+            [
+                ("validate", "google"),
+                ("collect", "https://example.com/product"),
+                ("analyze", "google"),
+            ],
+        )
         self.assertEqual(result.source.title, "Everyday Headphones")
         self.assertEqual(result.metrics.review_count, 3)
         self.assertEqual(result.reviews, sample_collection().reviews)
+
+    def test_credentials_are_validated_before_collection(self):
+        events = []
+
+        def validate(provider):
+            events.append(("validate", provider))
+            raise AnalysisError("invalid_api_key", "The selected credential is invalid.")
+
+        collector = Mock(side_effect=lambda url: events.append(("collect", url)))
+        analyzer = Mock()
+        with self.assertRaises(AnalysisError):
+            run_analysis(
+                "https://example.com/product",
+                "google",
+                credential_validator=validate,
+                collector=collector,
+                analyzer=analyzer,
+            )
+        self.assertEqual(events, [("validate", "google")])
+        collector.assert_not_called()
+        analyzer.assert_not_called()
 
 
 if __name__ == "__main__":

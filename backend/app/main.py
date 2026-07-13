@@ -1,9 +1,17 @@
 from fastapi import FastAPI, HTTPException
 
-from backend.app.analyzer import AnalysisError
 from backend.app.collector import CollectionError
+from backend.app.errors import AnalysisError
 from backend.app.models import AnalysisRequest, AnalysisResponse
 from backend.app.service import run_analysis
+
+
+ANALYSIS_STATUS_CODES = {
+    "missing_api_key": 400,
+    "invalid_api_key": 401,
+    "provider_unavailable": 503,
+    "analysis_failed": 502,
+}
 
 
 def create_app(analysis_service=run_analysis) -> FastAPI:
@@ -24,9 +32,8 @@ def create_app(analysis_service=run_analysis) -> FastAPI:
                 detail={"code": exc.code, "message": exc.public_message},
             ) from None
         except AnalysisError as exc:
-            status = 400 if exc.code == "missing_api_key" else 502
             raise HTTPException(
-                status_code=status,
+                status_code=ANALYSIS_STATUS_CODES.get(exc.code, 502),
                 detail={"code": exc.code, "message": exc.public_message},
             ) from None
         except Exception:

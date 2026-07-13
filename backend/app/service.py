@@ -1,5 +1,6 @@
 from backend.app.analyzer import analyze_reviews
 from backend.app.collector import collect_reviews
+from backend.app.credentials import validate_provider_credentials
 from backend.app.models import AnalysisResponse, Metrics, Provider, Review, ReviewSentiment
 
 
@@ -27,9 +28,11 @@ def run_analysis(
     url: str,
     provider: Provider,
     *,
+    credential_validator=validate_provider_credentials,
     collector=collect_reviews,
     analyzer=analyze_reviews,
 ) -> AnalysisResponse:
+    credential_validator(provider)
     collection = collector(url)
     insights = analyzer(collection.reviews, provider)
     metrics = calculate_metrics(collection.reviews, insights.review_sentiments)

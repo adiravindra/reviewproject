@@ -74,6 +74,8 @@ class PublicError(BaseModel):
         "collection_failed",
         "no_reviews",
         "missing_api_key",
+        "invalid_api_key",
+        "provider_unavailable",
         "analysis_failed",
     ]
     message: str

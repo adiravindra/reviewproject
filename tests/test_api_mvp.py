@@ -3,10 +3,10 @@ from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
 
-from backend.app.analyzer import AnalysisError
 from backend.app.collector import CollectionError
+from backend.app.errors import AnalysisError
 from backend.app.main import create_app
-from backend.app.models import AnalysisResponse
+from backend.app.models import AnalysisResponse, PublicError
 
 
 def sample_response():
@@ -91,13 +91,37 @@ class ApiTests(unittest.TestCase):
         )
 
     def test_collection_and_provider_failures_map_to_public_statuses(self):
+        invalid_key = AnalysisError(
+            "invalid_api_key",
+            "The selected credential is invalid.",
+        )
+        invalid_key.__cause__ = RuntimeError(
+            "Authorization: Bearer fake-secret-key; raw provider rejection"
+        )
+        unavailable = AnalysisError(
+            "provider_unavailable",
+            "The selected provider is temporarily unavailable.",
+        )
+        unavailable.__cause__ = RuntimeError(
+            "x-goog-api-key: fake-google-key; raw provider timeout details"
+        )
         cases = [
-            (CollectionError("invalid_url", "Use a public URL."), 422),
-            (CollectionError("collection_failed", "The page could not be read."), 502),
-            (AnalysisError("missing_api_key", "Set the provider key."), 400),
-            (AnalysisError("analysis_failed", "The analysis failed."), 502),
+            (CollectionError("invalid_url", "Use a public URL."), 422, ()),
+            (CollectionError("collection_failed", "The page could not be read."), 502, ()),
+            (AnalysisError("missing_api_key", "Set the provider key."), 400, ()),
+            (
+                invalid_key,
+                401,
+                ("fake-secret-key", "raw provider rejection"),
+            ),
+            (
+                unavailable,
+                503,
+                ("fake-google-key", "raw provider timeout details"),
+            ),
+            (AnalysisError("analysis_failed", "The analysis failed."), 502, ()),
         ]
-        for error, expected_status in cases:
+        for error, expected_status, private_details in cases:
             with self.subTest(code=error.code):
                 def fail(url, provider, raised=error):
                     raise raised
@@ -108,6 +132,14 @@ class ApiTests(unittest.TestCase):
                 )
                 self.assertEqual(response.status_code, expected_status)
                 self.assertEqual(response.json()["detail"]["code"], error.code)
+                for detail in private_details:
+                    self.assertNotIn(detail, response.text)
+
+    def test_public_error_accepts_credential_codes(self):
+        for code in ("invalid_api_key", "provider_unavailable"):
+            with self.subTest(code=code):
+                error = PublicError(code=code, message="Safe credential message.")
+                self.assertEqual(error.code, code)
 
     def test_malformed_url_does_not_call_service(self):
         service = Mock(return_value=sample_response())

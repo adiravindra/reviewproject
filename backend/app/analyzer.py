@@ -3,6 +3,7 @@ import os
 
 from langchain.agents import create_agent
 
+from backend.app.errors import AnalysisError
 from backend.app.models import AgentInsights, Provider, Review
 
 
@@ -14,13 +15,6 @@ Return no more than five strengths, five weaknesses, and five actionable recomme
 For every submitted review ID, return exactly one sentiment entry, with no missing, duplicate, or unknown IDs.
 Use only the sentiment values permitted by the response schema.
 """
-
-
-class AnalysisError(Exception):
-    def __init__(self, code: str, public_message: str):
-        super().__init__(public_message)
-        self.code = code
-        self.public_message = public_message
 
 
 def build_model(provider: Provider):

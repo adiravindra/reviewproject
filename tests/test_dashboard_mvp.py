@@ -127,6 +127,49 @@ class DashboardClientTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "no_reviews")
         self.assertEqual(str(raised.exception), "At least two public reviews are required.")
 
+    def test_structured_credential_errors_preserve_only_safe_fields(self):
+        cases = [
+            (
+                401,
+                "invalid_api_key",
+                "The selected credential is invalid.",
+            ),
+            (
+                503,
+                "provider_unavailable",
+                "The selected provider is temporarily unavailable.",
+            ),
+        ]
+        for status, code, safe_message in cases:
+            with self.subTest(code=code):
+                session = FakeSession(
+                    post_status=status,
+                    post_json={
+                        "detail": {
+                            "code": code,
+                            "message": safe_message,
+                            "provider_body": "raw provider body details",
+                            "authorization": "Bearer fake-secret-key",
+                            "provider_header": "x-goog-api-key: fake-google-key",
+                        }
+                    },
+                )
+                with self.assertRaises(ApiClientError) as raised:
+                    request_analysis(
+                        "https://example.com",
+                        "google",
+                        "http://127.0.0.1:8000",
+                        session=session,
+                    )
+                self.assertEqual(raised.exception.code, code)
+                self.assertEqual(str(raised.exception), safe_message)
+                message = str(raised.exception)
+                self.assertNotIn("fake-secret-key", message)
+                self.assertNotIn("fake-google-key", message)
+                self.assertNotIn("Bearer", message)
+                self.assertNotIn("x-goog-api-key", message)
+                self.assertNotIn("raw provider body", message)
+
     def test_analysis_uses_the_mvp_endpoint_and_long_timeout(self):
         session = FakeSession()
         report = request_analysis(

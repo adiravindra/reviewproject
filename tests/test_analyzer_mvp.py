@@ -3,7 +3,8 @@ import os
 import unittest
 from unittest.mock import Mock, patch
 
-from backend.app.analyzer import AnalysisError, analyze_reviews, build_model
+from backend.app.analyzer import analyze_reviews, build_model
+from backend.app.errors import AnalysisError
 from backend.app.models import AgentInsights, Review
 
 
