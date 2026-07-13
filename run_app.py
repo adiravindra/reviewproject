@@ -3,12 +3,18 @@
 import subprocess
 import sys
 import time
+import urllib.request
+import webbrowser
 from pathlib import Path
+from urllib.error import URLError
 
 from dotenv import load_dotenv
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+DASHBOARD_URL = "http://127.0.0.1:8501"
+DASHBOARD_HEALTH_URL = f"{DASHBOARD_URL}/_stcore/health"
+READINESS_REQUEST_TIMEOUT_SECONDS = 0.25
 # A tenth-second poll notices peer failure promptly without busy-spinning while
 # both long-lived services are healthy.
 POLL_INTERVAL_SECONDS = 0.1
@@ -21,6 +27,19 @@ def load_project_environment(*, loader=load_dotenv) -> None:
     """Load project settings without replacing the parent environment."""
 
     loader(PROJECT_ROOT / ".env", override=False)
+
+
+def dashboard_is_ready(*, urlopen=urllib.request.urlopen) -> bool:
+    """Return whether Streamlit's local health endpoint is ready."""
+
+    try:
+        with urlopen(
+            DASHBOARD_HEALTH_URL,
+            timeout=READINESS_REQUEST_TIMEOUT_SECONDS,
+        ) as response:
+            return response.status == 200
+    except (OSError, URLError):
+        return False
 
 
 def build_commands(python_executable: str) -> tuple[list[str], list[str]]:
@@ -73,6 +92,8 @@ def run(
     sleep=time.sleep,
     python_executable=sys.executable,
     load_environment=load_project_environment,
+    dashboard_ready=dashboard_is_ready,
+    open_browser=webbrowser.open,
     report=print,
 ) -> int:
     """Supervise both peers, stop survivors, and return user-oriented exit status."""
@@ -89,6 +110,7 @@ def run(
     try:
         backend = popen(backend_command, cwd=PROJECT_ROOT)
         dashboard = popen(dashboard_command, cwd=PROJECT_ROOT)
+        browser_attempted = False
         # Either peer is required for the app, so an early exit ends supervision
         # and the finally block shuts down its surviving counterpart.
         while True:
@@ -96,6 +118,17 @@ def run(
                 returncode = process.poll()
                 if returncode is not None:
                     return returncode or 1
+            if not browser_attempted and dashboard_ready():
+                browser_attempted = True
+                try:
+                    browser_opened = open_browser(DASHBOARD_URL)
+                except Exception:
+                    browser_opened = False
+                if not browser_opened:
+                    report(
+                        f"Open {DASHBOARD_URL} manually; "
+                        "the default browser could not be started."
+                    )
             sleep(POLL_INTERVAL_SECONDS)
     # User-requested shutdown is successful; startup and unexpected peer exits
     # remain nonzero so scripts can distinguish them from a clean Ctrl+C.

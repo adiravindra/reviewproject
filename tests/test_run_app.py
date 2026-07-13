@@ -5,11 +5,16 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from urllib.error import URLError
 from unittest.mock import patch
 
 from run_app import (
+    DASHBOARD_HEALTH_URL,
+    DASHBOARD_URL,
     PROJECT_ROOT,
+    READINESS_REQUEST_TIMEOUT_SECONDS,
     build_commands,
+    dashboard_is_ready,
     load_project_environment,
     run,
     stop_process,
@@ -31,6 +36,39 @@ class RecordingEnvironmentLoader:
         self.calls.append((args, kwargs))
         if self.error is not None:
             raise self.error
+
+
+class FakeHealthResponse:
+    """Provide the response context and status used by readiness tests."""
+
+    def __init__(self, status):
+        """Store the HTTP status returned by the fake context manager."""
+
+        self.status = status
+
+    def __enter__(self):
+        """Return this fake as the opened response context."""
+
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        """Leave the fake response context without suppressing errors."""
+
+        return False
+
+
+class SequenceResult:
+    """Return deterministic values across consecutive readiness checks."""
+
+    def __init__(self, values):
+        """Create an iterator over deterministic readiness results."""
+
+        self.values = iter(values)
+
+    def __call__(self):
+        """Return the next configured readiness value."""
+
+        return next(self.values)
 
 
 class FakeProcess:
@@ -155,6 +193,141 @@ class RunAppTests(unittest.TestCase):
         )
         self.assertNotIn("secret file details", messages[0])
 
+    def test_dashboard_readiness_uses_local_health_endpoint_and_timeout(self):
+        """Probe Streamlit's fixed local health URL with a bounded timeout."""
+
+        calls = []
+
+        def urlopen(url, *, timeout):
+            """Record the readiness request and return a healthy response."""
+
+            calls.append((url, timeout))
+            return FakeHealthResponse(200)
+
+        self.assertTrue(dashboard_is_ready(urlopen=urlopen))
+        self.assertEqual(
+            calls,
+            [(DASHBOARD_HEALTH_URL, READINESS_REQUEST_TIMEOUT_SECONDS)],
+        )
+
+    def test_dashboard_readiness_treats_transient_failures_as_not_ready(self):
+        """Convert local connection failures into a retryable not-ready result."""
+
+        cases = [URLError("not listening"), OSError("socket unavailable")]
+        for error in cases:
+            with self.subTest(error=error):
+
+                def urlopen(url, *, timeout, error=error):
+                    """Raise one configured transient readiness error."""
+
+                    raise error
+
+                self.assertFalse(dashboard_is_ready(urlopen=urlopen))
+
+    def test_browser_opens_once_only_after_dashboard_is_ready(self):
+        """Open the dashboard once after readiness and never before it."""
+
+        fake_popen = FakePopen([FakeProcess(), FakeProcess()])
+        readiness = SequenceResult([False, True])
+        opened = []
+        sleep_calls = 0
+
+        def sleep(_):
+            """Stop the simulated supervisor after three polling passes."""
+
+            nonlocal sleep_calls
+            sleep_calls += 1
+            if sleep_calls == 3:
+                raise KeyboardInterrupt
+
+        self.assertEqual(
+            run(
+                popen=fake_popen,
+                sleep=sleep,
+                load_environment=lambda: None,
+                dashboard_ready=readiness,
+                open_browser=lambda url: opened.append(url) or True,
+            ),
+            0,
+        )
+
+        self.assertEqual(opened, [DASHBOARD_URL])
+
+    def test_browser_failure_reports_manual_url_and_keeps_supervising(self):
+        """Report a manual URL while preserving supervision on a false result."""
+
+        fake_popen = FakePopen([FakeProcess(), FakeProcess()])
+        messages = []
+        sleep_calls = 0
+
+        def sleep(_):
+            """Stop the simulated supervisor after browser failure is observed."""
+
+            nonlocal sleep_calls
+            sleep_calls += 1
+            if sleep_calls == 2:
+                raise KeyboardInterrupt
+
+        self.assertEqual(
+            run(
+                popen=fake_popen,
+                sleep=sleep,
+                load_environment=lambda: None,
+                dashboard_ready=lambda: True,
+                open_browser=lambda _: False,
+                report=messages.append,
+            ),
+            0,
+        )
+
+        self.assertEqual(
+            messages,
+            [
+                f"Open {DASHBOARD_URL} manually; "
+                "the default browser could not be started."
+            ],
+        )
+        self.assertTrue(all(process.terminated for process in fake_popen.processes))
+
+    def test_browser_exception_is_safe_and_not_retried(self):
+        """Sanitize a browser exception and keep the launch attempt one-shot."""
+
+        fake_popen = FakePopen([FakeProcess(), FakeProcess()])
+        messages = []
+        attempts = 0
+        sleep_calls = 0
+
+        def open_browser(_):
+            """Raise a browser error containing details that must stay private."""
+
+            nonlocal attempts
+            attempts += 1
+            raise OSError("browser internals")
+
+        def sleep(_):
+            """Stop after enough polls to expose any incorrect browser retry."""
+
+            nonlocal sleep_calls
+            sleep_calls += 1
+            if sleep_calls == 2:
+                raise KeyboardInterrupt
+
+        self.assertEqual(
+            run(
+                popen=fake_popen,
+                sleep=sleep,
+                load_environment=lambda: None,
+                dashboard_ready=lambda: True,
+                open_browser=open_browser,
+                report=messages.append,
+            ),
+            0,
+        )
+
+        self.assertEqual(attempts, 1)
+        self.assertEqual(len(messages), 1)
+        self.assertNotIn("browser internals", messages[0])
+
     def test_commands_use_current_python_without_a_shell(self):
         """Build argument lists around the supplied current interpreter."""
 
@@ -221,7 +394,14 @@ class RunAppTests(unittest.TestCase):
 
             raise KeyboardInterrupt
 
-        self.assertEqual(run(popen=fake_popen, sleep=interrupting_sleep), 0)
+        self.assertEqual(
+            run(
+                popen=fake_popen,
+                sleep=interrupting_sleep,
+                dashboard_ready=lambda: False,
+            ),
+            0,
+        )
         self.assertTrue(
             all(
                 process.terminated and process.waited
