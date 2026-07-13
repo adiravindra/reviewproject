@@ -66,7 +66,8 @@ def validate_provider_credentials(provider: Provider, *, session=requests) -> No
         ) from None
 
     # Only status codes influence the result. Provider response bodies are not
-    # consumed because they may contain unstable or sensitive diagnostics.
+    # inspected or used in decisions because they may contain unstable or
+    # sensitive diagnostics.
     if response.status_code in {400, 401, 403}:
         raise AnalysisError(
             "invalid_api_key",

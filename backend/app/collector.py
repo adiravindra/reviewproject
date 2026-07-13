@@ -21,9 +21,15 @@ from backend.app.models import CollectionResult, Review, SourceInfo
 
 Resolver: TypeAlias = Callable[..., list[tuple[Any, ...]]]
 
+# A small manual-hop budget accommodates normal canonical redirects while
+# bounding repeated DNS validation and network work on attacker-controlled URLs.
 MAX_REDIRECTS = 3
+# One MiB leaves room for static review markup but caps bandwidth and memory
+# before the parser ever receives an untrusted response body.
 MAX_RESPONSE_BYTES = 1024 * 1024
 COLLECTION_MESSAGE = "The page could not be read. Try another public review page."
+# An explicit product-scoped identity avoids impersonating a browser and gives
+# public-site operators useful context for this narrowly scoped static fetcher.
 USER_AGENT = "ReviewInsight/1.0 (+static public review analysis)"
 
 

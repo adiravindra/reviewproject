@@ -36,6 +36,10 @@ def build_model(provider: Provider):
             # Lazy imports let deployments install only the provider they use.
             from langchain_google_genai import ChatGoogleGenerativeAI
 
+            # Stable defaults make behavior reproducible, while environment
+            # overrides permit deliberate model upgrades without a code change.
+            # Zero temperature and one bounded attempt reduce variation and help
+            # keep provider work inside the dashboard's end-to-end time budget.
             return ChatGoogleGenerativeAI(
                 model=os.getenv("REVIEWINSIGHT_GOOGLE_MODEL", "gemini-2.5-flash-lite"),
                 temperature=0,
@@ -55,6 +59,8 @@ def build_model(provider: Provider):
         # Keep provider package loading inside the same construction safeguard.
         from langchain_groq import ChatGroq
 
+        # Groq follows the same configurable-default and bounded-invocation
+        # policy, so switching providers does not change retry or timing semantics.
         return ChatGroq(
             model=os.getenv("REVIEWINSIGHT_GROQ_MODEL", "llama-3.3-70b-versatile"),
             temperature=0,

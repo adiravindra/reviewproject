@@ -7,7 +7,11 @@ from pathlib import Path
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+# A tenth-second poll notices peer failure promptly without busy-spinning while
+# both long-lived services are healthy.
 POLL_INTERVAL_SECONDS = 0.1
+# Five seconds gives frameworks time for graceful cleanup but prevents a stuck
+# child from hanging supervisor shutdown indefinitely.
 SHUTDOWN_TIMEOUT_SECONDS = 5.0
 
 
