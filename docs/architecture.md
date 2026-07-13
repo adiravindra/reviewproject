@@ -4,8 +4,11 @@
 
 ```text
 run_app.py supervisor
+  +-- load PROJECT_ROOT/.env without overriding parent environment
   +-- Uvicorn child: FastAPI 127.0.0.1:8000
   +-- Streamlit child: dashboard 127.0.0.1:8501
+  +-- wait for Streamlit /_stcore/health
+  +-- open dashboard once in the OS default browser
 
 Browser
   -> Streamlit form
@@ -18,9 +21,9 @@ Browser
        5. validate and return AnalysisResponse
 ```
 
-`run_app.py` owns process lifecycle only. It builds argument-list commands around `sys.executable`, launches both children from the project root without a shell, polls them, and stays alive while both remain active. `Ctrl+C` triggers graceful termination and a bounded wait for both children. If a child exits or cannot start, the supervisor stops its peer and returns a nonzero status; a child that does not terminate within five seconds is killed and reaped.
+`run_app.py` owns local startup and process lifecycle. Before starting either child, it loads `PROJECT_ROOT/.env` without replacing values already present in the parent environment. Both children inherit the resulting environment. It builds argument-list commands around `sys.executable`, launches both children from the project root without a shell, polls them, and stays alive while both remain active. `Ctrl+C` triggers graceful termination and a bounded wait for both children. If a child exits or cannot start, the supervisor stops its peer and returns a nonzero status; a child that does not terminate within five seconds is killed and reaped.
 
-The supervisor does not install dependencies, open a browser, change credentials, or suppress child output. FastAPI owns validation, collection, model interaction, calculations, response validation, and public error mapping. Streamlit owns form state, health checks, API calls, charts, and presentation. The applications share JSON contracts rather than importing backend services into the dashboard.
+The supervisor probes Streamlit's local health endpoint with a short timeout. On the first successful response it requests one operating-system default-browser open for `http://127.0.0.1:8501`. A browser failure prints the manual URL and does not stop supervision. The supervisor does not install dependencies, change credential values, or suppress child output. FastAPI owns validation, collection, model interaction, calculations, response validation, and public error mapping. Streamlit owns form state, backend health checks, API calls, charts, and presentation. The applications share JSON contracts rather than importing backend services into the dashboard.
 
 ## Analysis flow
 
@@ -100,7 +103,7 @@ FastAPI request-schema failures also use `422`. Unknown exceptions are reduced t
 
 ## File ownership
 
-- `run_app.py`: peer process commands, supervision, shutdown escalation, and exit semantics.
+- `run_app.py`: project environment loading, dashboard readiness and browser opening, peer process commands, supervision, shutdown escalation, and exit semantics.
 - `backend/app/errors.py`: stable application-owned analysis error.
 - `backend/app/credentials.py`: provider configuration and safe non-generative preflight.
 - `backend/app/collector.py`: destination safety, bounded retrieval, extraction, normalization, deduplication, and limits.
@@ -116,5 +119,5 @@ FastAPI request-schema failures also use `422`. Unknown exceptions are reduced t
 
 - JavaScript rendering, browser control, anti-bot bypasses, pagination, authenticated pages, and universal source compatibility.
 - Persistent reports, user accounts, authentication, queues, workers, and background processing.
-- Dependency installation, browser opening, credential mutation, or output suppression by the supervisor.
+- Dependency installation, credential mutation, or output suppression by the supervisor.
 - Custom model retries, batching, memory, checkpointers, heuristic model substitutes, or tracing services.

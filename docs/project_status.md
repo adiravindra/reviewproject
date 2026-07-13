@@ -5,8 +5,9 @@
 
 ## Current feature inventory
 
-- One root startup command, `.\.venv\Scripts\python.exe run_app.py`, launches FastAPI on `127.0.0.1:8000` and Streamlit on `127.0.0.1:8501`.
-- The supervisor uses the current interpreter and argument-list child commands, returns nonzero on startup or unexpected child failure, stops a surviving peer, and cleans up both children on `Ctrl+C`.
+- One root startup command, `.\.venv\Scripts\python.exe run_app.py`, loads the repository-root `.env`, launches FastAPI on `127.0.0.1:8000` and Streamlit on `127.0.0.1:8501`, then opens the ready dashboard in the operating system's default browser.
+- Existing shell and system environment values take precedence over matching `.env` values; both child services inherit the same resulting configuration.
+- The supervisor uses the current interpreter and argument-list child commands, waits on Streamlit's local health endpoint before one browser-open attempt, returns nonzero on startup or unexpected child failure, stops a surviving peer, and cleans up both children on `Ctrl+C`.
 - Gemini and Groq credentials are checked through non-generative model-list endpoints before destination resolution, review collection, model construction, or AI analysis.
 - Missing, rejected, unavailable, rate-limited, and transport-failed credential checks map to stable safe codes without exposing keys, headers, provider bodies, or internal exceptions.
 - The static collector enforces public destinations and redirect revalidation, streams at most 1 MiB of HTML, prefers JSON-LD, recognizes conservative review cards, deduplicates exact text, requires two reviews, and caps output at 40.
@@ -19,11 +20,11 @@
 
 ## Current test inventory
 
-The discovered suite contains 44 deterministic tests and makes no live website or AI-provider calls.
+The discovered suite contains 60 deterministic tests and makes no live website or AI-provider calls.
 
 - `tests/test_credentials.py`: provider endpoint, header, timeout, missing-key, rejected-key, availability, and sanitization contracts.
-- `tests/test_run_app.py`: child command construction, interrupt cleanup, peer exit, startup failure, and forced-shutdown escalation.
-- `tests/test_documentation.py`: retained-source discovery and module/class/function docstring enforcement.
+- `tests/test_run_app.py`: project-root dotenv precedence, readiness probing, one-time browser opening, child command construction, interrupt cleanup, peer exit, startup failure, and forced-shutdown escalation.
+- `tests/test_documentation.py`: startup-documentation, retained-source discovery, and module/class/function docstring enforcement.
 - `tests/test_collector_mvp.py`: public-address safety, redirects, streamed limits, extraction, deduplication, minimum review count, and cap.
 - `tests/test_analyzer_mvp.py`: direct key safeguards, one structured invocation, exact sentiment IDs, and sanitized provider errors.
 - `tests/test_service_mvp.py`: preflight-before-collection ordering, one-pass orchestration, and deterministic metrics.

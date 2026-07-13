@@ -41,14 +41,23 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Set the credential for each provider you intend to select:
+Create a `.env` file in the repository root and set the credential for each
+provider you intend to select:
 
-```powershell
-$env:GOOGLE_API_KEY = "your-gemini-key" # required when Gemini is selected
-$env:GROQ_API_KEY = "your-groq-key"     # required when Groq is selected
+```dotenv
+GOOGLE_API_KEY=your-gemini-key
+GROQ_API_KEY=your-groq-key
 ```
 
-Only the selected provider's credential is read and validated. The unselected provider's variable may be absent. `.env.example` lists every active setting, but the application reads process environment variables and does not load a `.env` file itself.
+`.env.example` lists every active setting without secrets. Only the selected
+provider's credential is read and validated, so the unselected provider's
+variable may be absent. Values already set in the shell or system environment
+take precedence over matching `.env` entries. You can therefore use PowerShell
+instead of `.env` when preferred:
+
+```powershell
+$env:GROQ_API_KEY = "your-groq-key"
+```
 
 Default model and backend URL settings are:
 
@@ -68,7 +77,10 @@ With the virtual environment installed and the selected provider credential set,
 .\.venv\Scripts\python.exe run_app.py
 ```
 
-Open `http://127.0.0.1:8501`. FastAPI listens on `127.0.0.1:8000`. Press `Ctrl+C` in the supervising terminal to stop both services.
+FastAPI listens on `127.0.0.1:8000`. After Streamlit becomes ready, the
+launcher automatically opens `http://127.0.0.1:8501` in the operating system's
+default browser. If no browser can be opened, use the printed URL manually.
+Press `Ctrl+C` in the supervising terminal to stop both services.
 
 ## Credential preflight
 
@@ -85,7 +97,7 @@ Only stable application-owned codes and messages cross the API boundary. Credent
 
 ## Project structure
 
-- `run_app.py` — starts, supervises, and stops the FastAPI and Streamlit child processes.
+- `run_app.py` — loads project settings, starts and supervises both services, and opens the ready dashboard.
 - `backend/app/errors.py` — shared safe application error type.
 - `backend/app/credentials.py` — selected-provider credential lookup and non-generative validation.
 - `backend/app/collector.py` — public-destination checks, bounded static retrieval, extraction, normalization, and limits.
@@ -97,8 +109,8 @@ Only stable application-owned codes and messages cross the API boundary. Credent
 - `dashboard/streamlit_app.py` — input form and staged report presentation.
 - `tests/fixtures/review_page.html` — deterministic static collection fixture.
 - `tests/test_credentials.py` — provider endpoint, authentication, timeout, and safe-status tests.
-- `tests/test_run_app.py` — supervisor command, exit, interrupt, and cleanup tests.
-- `tests/test_documentation.py` — retained Python docstring coverage.
+- `tests/test_run_app.py` — environment, readiness, browser, process, and cleanup tests.
+- `tests/test_documentation.py` — startup-documentation and retained Python docstring coverage.
 - `tests/test_collector_mvp.py` — collection safety, extraction, deduplication, and limit tests.
 - `tests/test_analyzer_mvp.py` — model construction, single invocation, schema, and sanitization tests.
 - `tests/test_service_mvp.py` — stage ordering and deterministic metric tests.
@@ -155,7 +167,7 @@ The first command runs credential, collector, analyzer, service, API, dashboard,
 
 ### Missing or invalid credential
 
-Set the variable for the provider selected in the dashboard. A missing key returns `missing_api_key`; a key rejected with provider status `400`, `401`, or `403` returns `invalid_api_key`. Check that the key has no surrounding whitespace and has permission to access the provider's models endpoint.
+Set the variable for the provider selected in the dashboard in the repository-root `.env` or the shell/system environment. Shell and system values take precedence. A missing key returns `missing_api_key`; a key rejected with provider status `400`, `401`, or `403` returns `invalid_api_key`. Check that the key has no surrounding whitespace and has permission to access the provider's models endpoint.
 
 ### Provider cannot be validated
 

@@ -61,6 +61,18 @@ def _missing_docstrings(path: Path) -> list[str]:
 class DocumentationCoverageTests(unittest.TestCase):
     """Guard the repository-wide descriptive-docstring contract."""
 
+    def test_readme_documents_dotenv_precedence_and_automatic_browser_open(
+        self,
+    ) -> None:
+        """Require startup documentation to match environment and browser behavior."""
+
+        readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn(".env", readme)
+        self.assertIn("take precedence", readme)
+        self.assertIn("automatically opens", readme)
+        self.assertNotIn("does not load a `.env` file itself", readme)
+
     def test_discovery_is_limited_to_retained_source_roots(self) -> None:
         """Ignore unrelated root files, generated output, and peer worktrees."""
         with tempfile.TemporaryDirectory() as directory:
