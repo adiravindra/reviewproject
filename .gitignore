@@ -221,6 +221,7 @@ __marimo__/
 codex/
 .codex_runtime/
 .worktrees/
+.superpowers/
 
 # ReviewInsight local runtime data
 data/review_history.json
