@@ -1,44 +1,46 @@
 # Project Status
 
 **Date:** July 13, 2026
-**Status:** Simple Review Insights MVP implemented and verified
+**Status:** ReviewInsight MVP implemented with supervised startup and credential preflight
 
-## Implemented
+## Current feature inventory
 
-- A bounded, static HTTP collector with public-address enforcement, redirect revalidation, HTML/content-size limits, JSON-LD-first extraction, conservative review-card fallback, exact deduplication, and a 40-review cap.
-- One structured LangChain `create_agent` invocation backed by configurable Gemini or Groq models.
-- Exact review-level sentiment-ID validation and sanitized provider errors.
-- Deterministic Python counts, rating metrics, sentiment distribution, and rating distribution.
-- A synchronous FastAPI service with only `GET /health` and `POST /api/analyze`.
-- A separate one-page Streamlit dashboard with backend health detection, four metrics, two charts, summary, themes, strengths, weaknesses, recommendations, and a review sample.
-- Five deterministic test modules that use fixtures and fakes rather than live websites or model calls.
-- Explicit two-terminal startup with no application subprocess launcher.
+- One root startup command, `.\.venv\Scripts\python.exe run_app.py`, launches FastAPI on `127.0.0.1:8000` and Streamlit on `127.0.0.1:8501`.
+- The supervisor uses the current interpreter and argument-list child commands, returns nonzero on startup or unexpected child failure, stops a surviving peer, and cleans up both children on `Ctrl+C`.
+- Gemini and Groq credentials are checked through non-generative model-list endpoints before destination resolution, review collection, model construction, or AI analysis.
+- Missing, rejected, unavailable, rate-limited, and transport-failed credential checks map to stable safe codes without exposing keys, headers, provider bodies, or internal exceptions.
+- The static collector enforces public destinations and redirect revalidation, streams at most 1 MiB of HTML, prefers JSON-LD, recognizes conservative review cards, deduplicates exact text, requires two reviews, and caps output at 40.
+- One structured LangChain agent invocation returns bounded insights and an exact review-level sentiment mapping from Gemini or Groq.
+- Counts, rating aggregates, sentiment distribution, and rating distribution are calculated deterministically in Python.
+- FastAPI exposes only `GET /health` and `POST /api/analyze`, with validated response schemas and explicit public status mappings.
+- The Streamlit dashboard provides provider selection, readiness checks, safe error rendering, four headline metrics, two charts, summary, themes, strengths, weaknesses, actions, and review evidence.
+- Every retained Python module, class, function, and test helper has descriptive docstring coverage.
+- The repository retains only active runtime, test fixture, operational documentation, and current design/plan artifacts; generated runtime output is ignored.
 
-## Verified evidence
+## Current test inventory
 
-- Planning baseline before replacement: 61 legacy tests passed.
-- Replacement gate before legacy deletion: 28 tests passed in 0.216 seconds.
-- Final discovered suite: 29 tests passed in 0.130 seconds with zero failures.
-- Final compile check: `python -m compileall backend dashboard tests` exited 0.
-- FastAPI started independently and returned `{"status":"ok"}` from `GET /health`.
-- Streamlit started independently and returned `ok` from `/_stcore/health`.
-- Chrome page identity: `http://127.0.0.1:8501/`, title `ReviewInsight`.
-- Desktop QA: 1440×900 first viewport and 1440×2800 complete-report capture; no horizontal overflow.
-- Mobile QA: 390×844; 348 px form inside a 380 px scroll container with no horizontal overflow.
-- Backend-stopped submission rendered the exact safe startup command with no raw exception.
-- Fake-contract end-to-end submission rendered all four metrics, both charts, summary, themes, strengths, weaknesses, recommendations, and five review samples.
-- Chrome console contained zero application errors. Streamlit's Vega embed emitted non-blocking warnings for discrete bar-chart zero values; rendered chart values remained correct.
-- Live collection check with external access: `Box of Chocolate Candy`, 5 reviews, extractor `json_ld`.
-- Live provider check skipped: `GOOGLE_API_KEY` and `GROQ_API_KEY` were both absent; no key values were printed.
-- Final screenshots were inspected locally against `docs/superpowers/designs/website-review-intelligence-dashboard.png`:
-  - `reviewinsight-desktop-final.png`
-  - `reviewinsight-mobile-final.png`
-- Planning commit confirmed: `1ea0065530b298215bec39cd004896025019a9ab`.
-- Untracked `tmp/` diagnostics were preserved and not modified.
+The discovered suite contains 44 deterministic tests and makes no live website or AI-provider calls.
 
-## Known limits
+- `tests/test_credentials.py`: provider endpoint, header, timeout, missing-key, rejected-key, availability, and sanitization contracts.
+- `tests/test_run_app.py`: child command construction, interrupt cleanup, peer exit, startup failure, and forced-shutdown escalation.
+- `tests/test_documentation.py`: retained-source discovery and module/class/function docstring enforcement.
+- `tests/test_collector_mvp.py`: public-address safety, redirects, streamed limits, extraction, deduplication, minimum review count, and cap.
+- `tests/test_analyzer_mvp.py`: direct key safeguards, one structured invocation, exact sentiment IDs, and sanitized provider errors.
+- `tests/test_service_mvp.py`: preflight-before-collection ordering, one-pass orchestration, and deterministic metrics.
+- `tests/test_api_mvp.py`: route surface, validation, safe envelopes, credential statuses, and generic unexpected failures.
+- `tests/test_dashboard_mvp.py`: health and analysis timeouts, safe client errors, backend unavailability, metrics, charts, and visual tokens.
 
-- Collection covers one static HTML page and does not run JavaScript or paginate.
+Current verification commands are:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m compileall -q backend dashboard tests run_app.py
+```
+
+## Current limits
+
+- Collection covers one static HTML page and does not execute JavaScript or paginate.
 - The demonstration site is external and may change independently.
-- Google and Groq credentials, model access, quotas, and free-tier eligibility are controlled by the provider account.
-- Automated tests deliberately make no live network or provider calls.
+- Provider credentials, permissions, quotas, availability, model access, and free-tier eligibility are controlled by Google or Groq.
+- Credential preflight confirms provider acceptance through the model-list endpoint; it does not guarantee that a later generative request will succeed.
+- Automated tests use fixtures and fakes; live provider and external-page behavior require separate operational checks.
