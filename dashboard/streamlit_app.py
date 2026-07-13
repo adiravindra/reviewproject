@@ -11,6 +11,28 @@ BACKEND_COMMAND = (
     r"--host 127.0.0.1 --port 8000"
 )
 
+DASHBOARD_CSS = """
+[data-testid="stToolbar"] {
+    display: none !important;
+}
+[data-testid="stBaseButton-primaryFormSubmit"] {
+    background-color: #2563eb !important;
+    border-color: #2563eb !important;
+    color: #ffffff !important;
+}
+[data-testid="stBaseButton-primaryFormSubmit"]:hover,
+[data-testid="stBaseButton-primaryFormSubmit"]:focus,
+[data-testid="stBaseButton-primaryFormSubmit"]:active {
+    background-color: #1d4ed8 !important;
+    border-color: #1d4ed8 !important;
+    color: #ffffff !important;
+}
+[data-testid="stRadio"] label[data-baseweb="radio"]:has(input:checked) > div:first-child {
+    background-color: #2563eb !important;
+    border-color: #2563eb !important;
+}
+"""
+
 
 def metric_values(report: dict[str, Any]) -> tuple[str, str, str, str]:
     metrics = report["metrics"]
@@ -79,6 +101,7 @@ def _configure_page() -> None:
         """,
         unsafe_allow_html=True,
     )
+    st.markdown(f"<style>{DASHBOARD_CSS}</style>", unsafe_allow_html=True)
 
 
 def _render_list(items: list[str]) -> None:

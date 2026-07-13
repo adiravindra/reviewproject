@@ -1,1 +1,0 @@
-"""Static review extraction implementations."""

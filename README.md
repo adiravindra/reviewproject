@@ -1,190 +1,102 @@
 # ReviewInsight
 
-ReviewInsight turns one public review-page URL into a website-level intelligence report. The synchronous FastAPI workflow safely collects available static reviews, normalizes and deduplicates them, calculates review and rating metrics in code, uses a configured LangChain chat provider for structured themes and sentiment labels, saves the completed report to SQLite, and renders it in Streamlit.
-
-The URL workflow is the only analysis workflow. There is no pasted-review route, local model, browser renderer, or rule-based analysis fallback.
-
-## What the report contains
-
-- Requested and canonical source URLs, entity identity, scraper, and page counts.
-- Reviews found, valid, analyzed, duplicated, invalid, and omitted by the cap.
-- Deterministic average rating, 1–5 star distribution, rated-review count, sentiment counts, and overall sentiment.
-- Structured executive summary, strengths, complaints, aspects, and improvement opportunities.
-- Representative review IDs resolved back to stored original customer wording.
-- Normalized reviews with rating, date, source URL, and author metadata when available.
-- Explicit partial-collection, truncation, and low-sample warnings.
-- Website-level history that loads stored reports without scraping or model calls.
+ReviewInsight is a lightweight proof of concept that turns reviews from one public HTML page into a structured product readout. FastAPI collects and analyzes reviews; a separate Streamlit dashboard presents deterministic metrics and AI-generated insights.
 
 ## Architecture
 
 ```text
-POST /analysis/website
-  -> public URL and DNS validation
-  -> redirect-safe bounded HTTP streaming
-  -> scraper registry
-       1. JSON-LD / Schema.org
-       2. conservative static review cards
-  -> clean, normalize, deduplicate, and cap
-  -> LangChain structured batches and synthesis
-  -> deterministic metrics and quotation resolution
-  -> validate complete response
-  -> one atomic SQLite save
+Streamlit :8501
+  -> POST FastAPI :8000/api/analyze
+       -> bounded static HTTP collection
+       -> JSON-LD first, conservative HTML review cards second
+       -> one structured LangChain agent call (Gemini or Groq)
+       -> deterministic Python metrics
+       -> validated report
 ```
 
-See [docs/architecture.md](docs/architecture.md) for diagrams and component ownership.
+The API exposes only `GET /health` and `POST /api/analyze`. The dashboard communicates with it over HTTP and never imports backend application services.
 
-## Safety and request limits
+## Supported sources and limitations
 
-| Limit | Default and hard ceiling |
-| --- | ---: |
-| Response body per page | 2 MiB |
-| Same-origin pages | 3 |
-| Scraping deadline | 25 seconds |
-| Unique reviews analyzed | 60 |
-| Reviews per model batch | 15 |
-| Batch calls | 4 |
-| Synthesis calls | 1 |
-| Total model calls | 5 |
-| Provider timeout per call | 20 seconds |
-| Overall request deadline | 120 seconds |
-| Minimum valid reviews | 2 |
-| Low-sample warning | fewer than 5 |
+- The URL must be public `http` or `https` without embedded credentials.
+- Collection uses ordinary HTTP requests only; it does not render JavaScript.
+- JSON-LD/Schema.org reviews are preferred. Conservative static review-card selectors are the fallback.
+- One page, at most three redirects, and at most 40 unique reviews are processed.
+- At least two reviews are required.
+- Pagination, authenticated pages, anti-bot bypasses, browser automation, databases, history, accounts, and background jobs are deliberately excluded.
 
-Environment overrides can make demo limits stricter. Values above safe ceilings are clamped.
+The demonstration page is `https://web-scraping.dev/product/1`. External markup can change, so deterministic tests use a committed HTML fixture.
 
-Only `http` and `https` URLs without embedded credentials are accepted. Every DNS answer and redirect target is checked; loopback, private, link-local, reserved, multicast, unspecified, and otherwise non-public addresses are rejected. Fetching uses explicit timeouts, a descriptive user agent, streamed size enforcement, content-type checks, redirect limits, and common challenge-page detection.
+## Installation
 
-## Verified public scraping demonstration
-
-On July 10, 2026, the production URL validator, HTTP fetcher, registry, JSON-LD extractor, and normalization pipeline reproduced this public learning-site page:
-
-- [web-scraping.dev — Box of Chocolate Candy](https://web-scraping.dev/product/1)
-- Scraper: `json_ld`
-- Entity: `Box of Chocolate Candy`
-- Result: 5 found, 5 valid, 5 analyzed, 1 page, no collection warnings
-
-This verifies that exact page state, not compatibility with every page on the domain. External markup can change at any time. The automated suite uses committed HTML fixtures and never depends on this live page.
-
-## Install
-
-From the project folder:
+Python 3.12 or newer is recommended.
 
 ```powershell
-cd C:\Users\adith\Desktop\Work\reviewproject
-py -3 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env
 ```
 
-`.env.example` is a reference template; the app does not load it automatically. Set secrets in the process environment only.
+The application reads configuration from environment variables. Load `.env` with your preferred local environment workflow or set the values in each terminal session.
 
-### Google Gemini (default)
+## Provider configuration
+
+Set at least one provider credential:
 
 ```powershell
 $env:GOOGLE_API_KEY = "your-key"
-$env:REVIEWINSIGHT_LLM_PROVIDER = "google"
-$env:REVIEWINSIGHT_LLM_MODEL = "gemini-2.5-flash-lite"
-```
-
-### Groq
-
-```powershell
+# or
 $env:GROQ_API_KEY = "your-key"
-$env:REVIEWINSIGHT_LLM_PROVIDER = "groq"
-$env:REVIEWINSIGHT_LLM_MODEL = "llama-3.3-70b-versatile"
 ```
 
-Provider keys are never hardcoded, returned to clients, or included in prompts. Authors are retained in stored review metadata but excluded from every model prompt.
+Default models are `gemini-2.5-flash-lite` and `llama-3.3-70b-versatile`. Override them with `REVIEWINSIGHT_GOOGLE_MODEL` and `REVIEWINSIGHT_GROQ_MODEL`. Free-tier eligibility, quotas, and model access are controlled by the Google or Groq account, not by ReviewInsight.
 
-## Run
+Never commit API keys or paste them into logs.
 
-Start FastAPI and Streamlit together:
+## Two-terminal startup
+
+Start FastAPI in the first terminal:
 
 ```powershell
-python scripts\run_app.py
+.\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:8501`. The backend listens on `http://127.0.0.1:8000`.
-
-Or run them in separate terminals:
+Start Streamlit independently in the second terminal:
 
 ```powershell
-python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
+.\.venv\Scripts\python.exe -m streamlit run dashboard\streamlit_app.py --server.address 127.0.0.1 --server.port 8501 --server.headless true
 ```
+
+Open `http://127.0.0.1:8501` and use `https://web-scraping.dev/product/1` as the sample URL.
+
+## API example
 
 ```powershell
-python -m streamlit run dashboard\streamlit_app.py --server.address 127.0.0.1 --server.port 8501
+$body = @{ url = "https://web-scraping.dev/product/1"; provider = "google" } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/analyze -ContentType application/json -Body $body
 ```
 
-## API
-
-### Analyze a website
-
-`POST /analysis/website`
-
-```powershell
-$body = @{ url = "https://web-scraping.dev/product/1" } | ConvertTo-Json
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/analysis/website -ContentType "application/json" -Body $body
-```
-
-Successful responses contain `source`, `collection`, `metrics`, `insights`, `reviews`, and `analysis`, plus the saved run `id`. The request returns only after the full response validates and is saved.
-
-### Website history
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:8000/analysis/history
-Invoke-RestMethod http://127.0.0.1:8000/analysis/history/<run-id>
-```
-
-The first route returns indexed website-level summaries. The second returns the exact stored report without rerunning collection or analysis.
-
-### Errors
-
-All API failures use one shape:
+Public errors use a small envelope such as:
 
 ```json
-{
-  "error": {
-    "code": "blocked_source",
-    "message": "The website blocked automated access.",
-    "stage": "scraping",
-    "retryable": false,
-    "details": {"url": "https://example.com/product"}
-  }
-}
+{"detail":{"code":"no_reviews","message":"At least two public reviews are required."}}
 ```
 
-Analysis error codes are `invalid_url`, `unsupported_source`, `blocked_source`, `no_reviews_found`, `insufficient_reviews`, `scrape_failed`, `llm_failed`, and `request_timeout`. Missing stored reports use the history-specific `analysis_not_found` code. Raw exceptions, provider bodies, and credentials are not returned.
+## Tests
 
-## Configuration
-
-The full environment-variable list is in [.env.example](.env.example). Common settings are:
-
-- `REVIEWINSIGHT_LLM_PROVIDER`
-- `REVIEWINSIGHT_LLM_MODEL`
-- `GOOGLE_API_KEY` or `GROQ_API_KEY`
-- `REVIEWINSIGHT_DB_PATH`
-- `REVIEWINSIGHT_MAX_PAGES`
-- `REVIEWINSIGHT_MAX_REVIEWS`
-- `REVIEWINSIGHT_OVERALL_DEADLINE_SECONDS`
-
-The default database is `data/reviewinsight.db`. Fresh databases create only `website_analysis_runs`. If an older local database contains `analysis_runs`, those rows are left untouched but are not read or written.
-
-## Test
+Tests do not call live websites or providers.
 
 ```powershell
-python -m unittest discover -s tests -v
-python -m compileall backend dashboard scripts tests
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m compileall backend dashboard tests
 ```
 
-Tests use deterministic HTML, fake HTTP sessions, fake LangChain-compatible structured models, and temporary SQLite databases. They do not call live sites or real model providers.
+## Connection-error resolution
 
-## Known scraping limitations
+If the dashboard says the backend is unreachable, run the FastAPI command above in a separate terminal and verify:
 
-- Static HTML only: no Playwright, JavaScript execution, scrolling, clicking, authenticated sessions, or browser fallback.
-- Pages that load reviews only through client-side APIs are unsupported unless the initial HTML also exposes supported JSON-LD.
-- Anti-bot, login, consent, and rate-limit pages return explicit errors; the app does not try to bypass them.
-- The generic static extractor intentionally ignores arbitrary paragraphs and comments, so some accessible pages will return `unsupported_source` rather than guessed reviews.
-- Pagination is followed only from review-specific, same-origin next links and stops at three pages.
-- Markup and access policies are controlled by external sites and may change without notice.
-- A successful scrape does not imply permission for bulk collection. Users remain responsible for site terms and applicable law.
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health
+```
+
+The expected response contains `status: ok`. ReviewInsight intentionally has no launcher that spawns both processes; starting them explicitly keeps Windows process ownership and localhost failures visible.

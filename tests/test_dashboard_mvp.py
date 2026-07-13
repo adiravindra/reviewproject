@@ -3,7 +3,7 @@ import unittest
 import requests
 
 from dashboard.api_client import ApiClientError, BackendUnavailable, check_health, request_analysis
-from dashboard.streamlit_app import metric_values, rating_rows, sentiment_rows
+from dashboard.streamlit_app import DASHBOARD_CSS, metric_values, rating_rows, sentiment_rows
 
 
 class FakeResponse:
@@ -147,6 +147,12 @@ class DashboardClientTests(unittest.TestCase):
 
 
 class DashboardFormattingTests(unittest.TestCase):
+    def test_primary_controls_keep_the_blue_design_token(self):
+        self.assertIn('[data-testid="stBaseButton-primaryFormSubmit"]', DASHBOARD_CSS)
+        self.assertIn(":has(input:checked)", DASHBOARD_CSS)
+        self.assertIn('[data-testid="stToolbar"]', DASHBOARD_CSS)
+        self.assertIn("#2563eb", DASHBOARD_CSS)
+
     def test_metrics_and_charts_use_response_values(self):
         report = sample_report()
         self.assertEqual(metric_values(report), ("3", "4.0 / 5", "66.7%", "Positive"))
