@@ -1,3 +1,5 @@
+"""Test FastAPI routes, validation, and safe public failure envelopes."""
+
 import unittest
 from unittest.mock import Mock
 
@@ -10,6 +12,8 @@ from backend.app.models import AnalysisResponse, PublicError
 
 
 def sample_response():
+    """Build a fully validated response returned by API service fakes."""
+
     return AnalysisResponse.model_validate(
         {
             "source": {
@@ -54,13 +58,19 @@ def sample_response():
 
 
 class ApiTests(unittest.TestCase):
+    """Group regression contracts at the public HTTP boundary."""
+
     def test_only_health_and_analyze_are_active(self):
+        """Keep the MVP surface limited to readiness and analysis routes."""
+
         client = TestClient(create_app(analysis_service=lambda url, provider: sample_response()))
         self.assertEqual(client.get("/health").json(), {"status": "ok"})
         paths = set(client.get("/openapi.json").json()["paths"])
         self.assertEqual(paths, {"/health", "/api/analyze"})
 
     def test_analyze_returns_the_validated_response(self):
+        """Pass validated input to the service and serialize its response contract."""
+
         service = Mock(return_value=sample_response())
         client = TestClient(create_app(analysis_service=service))
         response = client.post(
@@ -72,7 +82,11 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.json()["metrics"]["review_count"], 3)
 
     def test_known_failures_have_small_safe_envelopes(self):
+        """Expose collection failures only through the documented detail shape."""
+
         def fail(url, provider):
+            """Simulate a known insufficient-review collection failure."""
+
             raise CollectionError("no_reviews", "At least two public reviews are required.")
 
         response = TestClient(create_app(analysis_service=fail)).post(
@@ -91,6 +105,8 @@ class ApiTests(unittest.TestCase):
         )
 
     def test_collection_and_provider_failures_map_to_public_statuses(self):
+        """Map domain codes stably while excluding chained provider secrets."""
+
         invalid_key = AnalysisError(
             "invalid_api_key",
             "The selected credential is invalid.",
@@ -124,6 +140,8 @@ class ApiTests(unittest.TestCase):
         for error, expected_status, private_details in cases:
             with self.subTest(code=error.code):
                 def fail(url, provider, raised=error):
+                    """Raise the current table-driven domain failure."""
+
                     raise raised
 
                 response = TestClient(create_app(analysis_service=fail)).post(
@@ -136,12 +154,16 @@ class ApiTests(unittest.TestCase):
                     self.assertNotIn(detail, response.text)
 
     def test_public_error_accepts_credential_codes(self):
+        """Keep credential preflight codes inside the declared public schema."""
+
         for code in ("invalid_api_key", "provider_unavailable"):
             with self.subTest(code=code):
                 error = PublicError(code=code, message="Safe credential message.")
                 self.assertEqual(error.code, code)
 
     def test_malformed_url_does_not_call_service(self):
+        """Reject malformed URLs during request validation before service work."""
+
         service = Mock(return_value=sample_response())
         response = TestClient(create_app(analysis_service=service)).post(
             "/api/analyze",
@@ -151,7 +173,11 @@ class ApiTests(unittest.TestCase):
         service.assert_not_called()
 
     def test_unexpected_exception_is_generic(self):
+        """Convert unknown exceptions to a generic non-leaking server error."""
+
         def fail(url, provider):
+            """Simulate an unexpected internal failure carrying private details."""
+
             raise RuntimeError("database password and provider internals")
 
         response = TestClient(create_app(analysis_service=fail)).post(

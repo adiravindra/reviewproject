@@ -1,3 +1,5 @@
+"""Render the Streamlit control flow and staged ReviewInsight report."""
+
 import os
 from typing import Any
 
@@ -6,6 +8,8 @@ import streamlit as st
 from dashboard.api_client import ApiClientError, BackendUnavailable, check_health, request_analysis
 
 
+# Configuration and CSS tokens keep operational guidance and the primary blue
+# visual identity consistent across Streamlit widget implementations.
 BACKEND_COMMAND = (
     r".\.venv\Scripts\python.exe -m uvicorn backend.app.main:app "
     r"--host 127.0.0.1 --port 8000"
@@ -35,6 +39,8 @@ DASHBOARD_CSS = """
 
 
 def metric_values(report: dict[str, Any]) -> tuple[str, str, str, str]:
+    """Format report headline metrics without depending on Streamlit state."""
+
     metrics = report["metrics"]
     insights = report["insights"]
     average = metrics.get("average_rating")
@@ -48,6 +54,8 @@ def metric_values(report: dict[str, Any]) -> tuple[str, str, str, str]:
 
 
 def sentiment_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
+    """Convert sentiment counts into deterministic chart rows."""
+
     counts = report["metrics"]["sentiment_counts"]
     return [
         {"Sentiment": sentiment.title(), "Reviews": int(counts.get(sentiment, 0))}
@@ -56,6 +64,8 @@ def sentiment_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def rating_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
+    """Convert the complete one-to-five distribution into chart rows."""
+
     distribution = report["metrics"]["rating_distribution"]
     return [
         {"Rating": f"{star} star", "Reviews": int(distribution.get(str(star), 0))}
@@ -64,6 +74,8 @@ def rating_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _configure_page() -> None:
+    """Apply shared page metadata, responsive layout, and design tokens."""
+
     st.set_page_config(page_title="ReviewInsight", page_icon="💬", layout="wide")
     st.markdown(
         """
@@ -105,6 +117,8 @@ def _configure_page() -> None:
 
 
 def _render_list(items: list[str]) -> None:
+    """Render bounded insight lists with a clear empty-state marker."""
+
     if not items:
         st.write("—")
         return
@@ -113,6 +127,8 @@ def _render_list(items: list[str]) -> None:
 
 
 def _render_report(report: dict[str, Any]) -> None:
+    """Render metrics, narrative, charts, themes, actions, and evidence in stages."""
+
     metrics = metric_values(report)
     metric_columns = st.columns(4)
     labels = ("Reviews analyzed", "Average rating", "Positive share", "Overall sentiment")
@@ -169,6 +185,8 @@ def _render_report(report: dict[str, Any]) -> None:
 
 
 def main() -> None:
+    """Coordinate form submission, safe errors, report replacement, and rendering."""
+
     _configure_page()
     st.title("ReviewInsight")
     st.caption("Turn public customer reviews into a clear product readout.")
@@ -183,6 +201,8 @@ def main() -> None:
         submitted = st.form_submit_button("Analyze reviews", type="primary", width="stretch")
 
     if submitted:
+        # A new attempt replaces the prior result immediately so stale analysis
+        # is never displayed as if it belonged to the newly submitted URL.
         st.session_state.pop("latest_report", None)
         if not check_health(base_url):
             st.error("The FastAPI backend is not reachable. Start it with:")
@@ -195,6 +215,8 @@ def main() -> None:
                         "google" if provider_label == "Gemini" else "groq",
                         base_url,
                     )
+            # Only curated client messages reach Streamlit; exception details and
+            # operating-system diagnostics remain behind the client boundary.
             except BackendUnavailable:
                 st.error("The FastAPI backend is not reachable. Start it with:")
                 st.code(BACKEND_COMMAND, language="powershell")

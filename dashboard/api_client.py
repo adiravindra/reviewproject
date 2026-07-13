@@ -1,3 +1,5 @@
+"""Call the backend with stage-appropriate timeouts and safe error decoding."""
+
 from typing import Any
 
 import requests
@@ -11,12 +13,16 @@ class ApiClientError(Exception):
     """A safe, structured backend or HTTP failure."""
 
     def __init__(self, code: str, message: str):
+        """Store only the code and message approved for dashboard rendering."""
+
         super().__init__(message)
         self.code = code
         self.message = message
 
 
 def check_health(base_url: str, *, session=requests) -> bool:
+    """Probe process readiness with a short timeout and a strict response shape."""
+
     try:
         response = session.get(f"{base_url.rstrip('/')}/health", timeout=2)
         return response.status_code == 200 and response.json() == {"status": "ok"}
@@ -31,8 +37,12 @@ def request_analysis(
     *,
     session=requests,
 ) -> dict[str, Any]:
+    """Request a potentially long analysis and return its decoded object response."""
+
     endpoint = f"{base_url.rstrip('/')}/api/analyze"
     try:
+        # Analysis includes collection and one provider call, so it receives a
+        # longer budget than the two-second health/readiness probe.
         response = session.post(
             endpoint,
             json={"url": url, "provider": provider},
@@ -45,6 +55,8 @@ def request_analysis(
 
     if response.status_code >= 400:
         detail: dict[str, Any] = {}
+        # Error JSON is treated as untrusted: preserve only the documented nested
+        # code/message fields and fall back safely for every other response shape.
         if response.headers.get("content-type", "").startswith("application/json"):
             try:
                 payload = response.json()

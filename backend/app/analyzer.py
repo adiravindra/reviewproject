@@ -1,3 +1,10 @@
+"""Produce schema-validated insights from supplied review evidence only.
+
+Provider integrations are imported lazily so an unused provider remains an
+optional dependency. Model construction and invocation errors are converted to
+the safe analysis boundary, and returned sentiment IDs must exactly match input.
+"""
+
 import json
 import os
 
@@ -7,6 +14,8 @@ from backend.app.errors import AnalysisError
 from backend.app.models import AgentInsights, Provider, Review
 
 
+# The prompt explicitly forbids outside facts and asks for one structured result;
+# deterministic metrics stay out of the model and are computed by the service.
 SYSTEM_PROMPT = """You analyze customer reviews using only the supplied evidence.
 Return the requested structured response without inventing facts or product details.
 Write a concise overall summary and choose overall sentiment from the schema.
@@ -18,10 +27,13 @@ Use only the sentiment values permitted by the response schema.
 
 
 def build_model(provider: Provider):
+    """Construct the selected chat model behind a sanitized failure boundary."""
+
     if provider == "google":
         if not os.getenv("GOOGLE_API_KEY"):
             raise AnalysisError("missing_api_key", "Set GOOGLE_API_KEY before using Gemini.")
         try:
+            # Lazy imports let deployments install only the provider they use.
             from langchain_google_genai import ChatGoogleGenerativeAI
 
             return ChatGoogleGenerativeAI(
@@ -40,6 +52,7 @@ def build_model(provider: Provider):
     if not os.getenv("GROQ_API_KEY"):
         raise AnalysisError("missing_api_key", "Set GROQ_API_KEY before using Groq.")
     try:
+        # Keep provider package loading inside the same construction safeguard.
         from langchain_groq import ChatGroq
 
         return ChatGroq(
@@ -61,7 +74,11 @@ def analyze_reviews(
     agent_factory=create_agent,
     model_factory=build_model,
 ) -> AgentInsights:
+    """Invoke one tool-free agent and require sentiments for exactly all reviews."""
+
     model = model_factory(provider)
+    # One invocation returns the entire schema, avoiding divergent multi-agent
+    # summaries and keeping all claims tied to the same submitted evidence.
     agent = agent_factory(
         model=model,
         tools=[],
@@ -82,6 +99,8 @@ def analyze_reviews(
     except Exception:
         raise AnalysisError("analysis_failed", "The AI analysis could not be completed.") from None
 
+    # Schema validation checks shape; this explicit set comparison additionally
+    # rejects duplicate, invented, or omitted review identifiers.
     expected = {review.id for review in reviews}
     returned = [item.review_id for item in insights.review_sentiments]
     if len(returned) != len(set(returned)) or set(returned) != expected:

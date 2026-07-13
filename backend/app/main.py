@@ -1,3 +1,5 @@
+"""Expose the validated analysis service through a small, stable FastAPI boundary."""
+
 from fastapi import FastAPI, HTTPException
 
 from backend.app.collector import CollectionError
@@ -6,6 +8,8 @@ from backend.app.models import AnalysisRequest, AnalysisResponse
 from backend.app.service import run_analysis
 
 
+# Stable status mappings let clients distinguish user-correctable credentials,
+# transient providers, and upstream analysis failures without internal details.
 ANALYSIS_STATUS_CODES = {
     "missing_api_key": 400,
     "invalid_api_key": 401,
@@ -15,14 +19,20 @@ ANALYSIS_STATUS_CODES = {
 
 
 def create_app(analysis_service=run_analysis) -> FastAPI:
+    """Build the API with an injectable service for boundary-focused tests."""
+
     app = FastAPI(title="ReviewInsight MVP")
 
     @app.get("/health")
     def health():
+        """Return the minimal process-readiness contract used by the dashboard."""
+
         return {"status": "ok"}
 
     @app.post("/api/analyze", response_model=AnalysisResponse)
     def analyze(request: AnalysisRequest):
+        """Translate validated requests and safe domain failures into HTTP results."""
+
         try:
             return analysis_service(str(request.url), request.provider)
         except CollectionError as exc:

@@ -1,3 +1,5 @@
+"""Test non-generative credential preflight and sanitized status mapping."""
+
 import os
 import unittest
 from unittest.mock import patch
@@ -9,19 +11,29 @@ from backend.app.errors import AnalysisError
 
 
 class FakeResponse:
+    """Simulate provider status and potentially sensitive body content."""
+
     def __init__(self, status_code, *, text=""):
+        """Store the response fields needed to verify body-independent mapping."""
+
         self.status_code = status_code
         self.text = text
 
 
 class FakeSession:
+    """Simulate provider HTTP transport while recording authentication policy."""
+
     def __init__(self, result):
+        """Configure either a fake response or transport exception result."""
+
         self.result = result
         self.url = None
         self.headers = None
         self.timeout = None
 
     def get(self, url, *, headers, timeout):
+        """Record preflight inputs and produce the configured transport result."""
+
         self.url = url
         self.headers = headers
         self.timeout = timeout
@@ -31,7 +43,11 @@ class FakeSession:
 
 
 class CredentialTests(unittest.TestCase):
+    """Group provider preflight endpoint, ordering, and safety contracts."""
+
     def test_gemini_uses_non_generative_model_list_endpoint(self):
+        """Validate Gemini via model listing with its header and short timeout."""
+
         session = FakeSession(FakeResponse(200))
         with patch.dict(os.environ, {"GOOGLE_API_KEY": "google-secret"}, clear=True):
             validate_provider_credentials("google", session=session)
@@ -43,6 +59,8 @@ class CredentialTests(unittest.TestCase):
         self.assertEqual(session.timeout, (3, 5))
 
     def test_groq_uses_non_generative_model_list_endpoint(self):
+        """Validate Groq via model listing with bearer authentication."""
+
         session = FakeSession(FakeResponse(200))
         with patch.dict(os.environ, {"GROQ_API_KEY": "groq-secret"}, clear=True):
             validate_provider_credentials("groq", session=session)
@@ -50,6 +68,8 @@ class CredentialTests(unittest.TestCase):
         self.assertEqual(session.headers, {"Authorization": "Bearer groq-secret"})
 
     def test_missing_selected_key_stops_before_http(self):
+        """Stop a missing selected credential before making any HTTP request."""
+
         session = FakeSession(FakeResponse(200))
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaises(AnalysisError) as raised:
@@ -58,6 +78,8 @@ class CredentialTests(unittest.TestCase):
         self.assertIsNone(session.url)
 
     def test_provider_rejection_is_safe(self):
+        """Map rejection statuses without exposing credentials or response bodies."""
+
         for status in (400, 401, 403):
             with self.subTest(status=status):
                 session = FakeSession(
@@ -71,6 +93,8 @@ class CredentialTests(unittest.TestCase):
                 self.assertNotIn("raw provider", str(raised.exception))
 
     def test_temporary_or_unknown_failure_is_safe(self):
+        """Map rate, server, and transport failures to sanitized unavailability."""
+
         cases = [
             FakeResponse(429, text="quota internals"),
             FakeResponse(500, text="provider stack"),

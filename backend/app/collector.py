@@ -1,3 +1,10 @@
+"""Collect public reviews through an SSRF-resistant, size-bounded pipeline.
+
+Every initial URL and redirect target is resolved and revalidated as public.
+The collector prefers explicit JSON-LD review data, falls back only to known
+review-card structures, then normalizes and deduplicates the bounded result.
+"""
+
 import ipaddress
 import json
 import re
@@ -21,7 +28,11 @@ USER_AGENT = "ReviewInsight/1.0 (+static public review analysis)"
 
 
 class CollectionError(Exception):
+    """Carry a stable collection code and message safe for public responses."""
+
     def __init__(self, code: str, public_message: str):
+        """Store only the error information intentionally exposed by the API."""
+
         super().__init__(public_message)
         self.code = code
         self.public_message = public_message
@@ -33,9 +44,13 @@ def collect_reviews(
     session: requests.Session | None = None,
     resolver: Resolver = socket.getaddrinfo,
 ) -> CollectionResult:
+    """Fetch, extract, normalize, and validate reviews from one public page."""
+
     client = session or requests.Session()
     current_url = url
     try:
+        # Redirects are handled manually so every hop is re-resolved before any
+        # request, preventing a public URL from redirecting into a private host.
         for _ in range(MAX_REDIRECTS + 1):
             _validate_public_url(current_url, resolver)
             response = _fetch_once(client, current_url)
@@ -51,6 +66,8 @@ def collect_reviews(
         else:
             raise CollectionError("collection_failed", COLLECTION_MESSAGE)
 
+        # Structured review semantics are stronger evidence than CSS naming, so
+        # HTML cards are used only when JSON-LD yields no review candidates.
         title, candidates = _extract_json_ld(html)
         extractor = "json_ld"
         if not candidates:
@@ -76,6 +93,8 @@ def collect_reviews(
 
 
 def _validate_public_url(url: str, resolver: Resolver) -> None:
+    """Reject malformed, credential-bearing, or non-global destinations."""
+
     try:
         parsed = urlparse(url)
         if (
@@ -98,6 +117,8 @@ def _validate_public_url(url: str, resolver: Resolver) -> None:
 
 
 def _fetch_once(client: requests.Session, url: str):
+    """Issue one streamed request without following redirects automatically."""
+
     try:
         response = client.get(
             url,
@@ -115,6 +136,8 @@ def _fetch_once(client: requests.Session, url: str):
 
 
 def _read_html(response) -> str:
+    """Read only HTML while enforcing the byte limit during streaming."""
+
     try:
         content_type = response.headers.get("content-type", "").lower()
         if "text/html" not in content_type and "application/xhtml+xml" not in content_type:
@@ -138,6 +161,8 @@ def _read_html(response) -> str:
 
 
 def _walk_json(value: Any) -> Iterable[dict[str, Any]]:
+    """Yield every mapping nested in a JSON-compatible value."""
+
     if isinstance(value, dict):
         yield value
         for child in value.values():
@@ -148,6 +173,8 @@ def _walk_json(value: Any) -> Iterable[dict[str, Any]]:
 
 
 def _extract_json_ld(html: str) -> tuple[str | None, list[dict[str, Any]]]:
+    """Extract review bodies and product title from valid JSON-LD objects."""
+
     soup = BeautifulSoup(html, "html.parser")
     title = None
     candidates: list[dict[str, Any]] = []
@@ -181,8 +208,12 @@ def _extract_json_ld(html: str) -> tuple[str | None, list[dict[str, Any]]]:
 
 
 def _extract_html_cards(html: str) -> tuple[str | None, list[dict[str, Any]]]:
+    """Extract only recognized review containers as a conservative fallback."""
+
     soup = BeautifulSoup(html, "html.parser")
     page_title = _clean_text(soup.title.get_text()) if soup.title else None
+    # Arbitrary paragraphs are intentionally excluded: ordinary page copy is
+    # not reliable evidence that an author intended the text as a review.
     containers = soup.select('[itemprop="review"], .review, .review-card, [data-review-id]')
     candidates: list[dict[str, Any]] = []
     for container in containers:
@@ -209,6 +240,8 @@ def _extract_html_cards(html: str) -> tuple[str | None, list[dict[str, Any]]]:
 
 
 def _clean_text(value: Any) -> str | None:
+    """Collapse whitespace and represent empty candidate text as absent."""
+
     if value is None:
         return None
     cleaned = " ".join(str(value).split())
@@ -216,6 +249,8 @@ def _clean_text(value: Any) -> str | None:
 
 
 def _parse_rating(value: Any) -> int | None:
+    """Accept only unambiguous integral ratings in the supported one-to-five range."""
+
     if value is None or isinstance(value, bool):
         return None
     match = re.search(r"(?<!\d)([1-5](?:\.0)?)(?!\d)", str(value))
@@ -226,12 +261,16 @@ def _parse_rating(value: Any) -> int | None:
 
 
 def _normalize(candidates: Iterable[dict[str, Any]], *, limit: int) -> list[Review]:
+    """Clean, deduplicate, identify, and cap extracted review candidates."""
+
     reviews: list[Review] = []
     seen: set[str] = set()
     for candidate in candidates:
         text = _clean_text(candidate.get("text"))
         if text is None or len(text) < 10:
             continue
+        # Case-insensitive exact text is stable enough for deterministic
+        # deduplication without conflating merely similar customer experiences.
         fingerprint = text.casefold()
         if fingerprint in seen:
             continue

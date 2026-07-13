@@ -1,3 +1,5 @@
+"""Test deterministic metrics and ordered end-to-end service orchestration."""
+
 import unittest
 from unittest.mock import Mock
 
@@ -7,6 +9,8 @@ from backend.app.service import calculate_metrics, run_analysis
 
 
 def sample_reviews():
+    """Build representative rated and unrated normalized reviews."""
+
     return [
         Review(id="r1", text="Clear sound and comfortable fit.", rating=5, date="2026-06-01"),
         Review(id="r2", text="Battery is adequate for a normal day.", rating=3),
@@ -15,6 +19,8 @@ def sample_reviews():
 
 
 def sample_sentiments():
+    """Build exact sentiment assignments for the sample review IDs."""
+
     return [
         ReviewSentiment(review_id="r1", sentiment="positive"),
         ReviewSentiment(review_id="r2", sentiment="positive"),
@@ -23,6 +29,8 @@ def sample_sentiments():
 
 
 def sample_collection():
+    """Build a validated collector result for orchestration tests."""
+
     return CollectionResult(
         source=SourceInfo(
             url="https://example.com/product",
@@ -34,6 +42,8 @@ def sample_collection():
 
 
 def sample_insights():
+    """Build validated structured agent insights for service tests."""
+
     return AgentInsights(
         summary="Sound and comfort are the clearest positives, while microphone quality needs work.",
         overall_sentiment="positive",
@@ -52,7 +62,11 @@ def sample_insights():
 
 
 class ServiceTests(unittest.TestCase):
+    """Group metric determinism and pipeline-order regression contracts."""
+
     def test_metrics_are_derived_from_reviews_and_sentiments(self):
+        """Compute all aggregate values directly from reviews and sentiments."""
+
         metrics = calculate_metrics(sample_reviews(), sample_sentiments())
         self.assertEqual(metrics.review_count, 3)
         self.assertEqual(metrics.rated_count, 2)
@@ -62,6 +76,8 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(metrics.rating_distribution, {"1": 0, "2": 0, "3": 1, "4": 0, "5": 1})
 
     def test_metrics_allow_reviews_without_ratings(self):
+        """Keep unrated review metrics defined without inventing an average."""
+
         reviews = [
             Review(id="r1", text="A sufficiently detailed unrated review."),
             Review(id="r2", text="Another sufficiently detailed unrated review."),
@@ -77,6 +93,8 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(metrics.rating_distribution, {str(star): 0 for star in range(1, 6)})
 
     def test_pipeline_calls_each_stage_once_and_returns_contract(self):
+        """Run every stage once in order and assemble the response schema."""
+
         events = []
         credential_validator = Mock(
             side_effect=lambda provider: events.append(("validate", provider))
@@ -116,9 +134,13 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(result.reviews, sample_collection().reviews)
 
     def test_credentials_are_validated_before_collection(self):
+        """Stop collection and analysis when credential preflight rejects a key."""
+
         events = []
 
         def validate(provider):
+            """Record preflight and simulate a selected credential rejection."""
+
             events.append(("validate", provider))
             raise AnalysisError("invalid_api_key", "The selected credential is invalid.")
 

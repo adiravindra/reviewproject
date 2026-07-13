@@ -1,3 +1,5 @@
+"""Test evidence-only agent invocation and structured-result safeguards."""
+
 import json
 import os
 import unittest
@@ -9,6 +11,8 @@ from backend.app.models import AgentInsights, Review
 
 
 def sample_reviews():
+    """Build representative normalized evidence for analyzer tests."""
+
     return [
         Review(id="r1", text="Clear sound and comfortable fit.", rating=5, date="2026-06-01"),
         Review(id="r2", text="Battery lasts well but the microphone is average.", rating=3, date=None),
@@ -16,6 +20,8 @@ def sample_reviews():
 
 
 def valid_insights(review_ids=None):
+    """Build schema-valid insights with configurable returned review IDs."""
+
     review_ids = review_ids or ["r1", "r2"]
     return AgentInsights(
         summary="Customers value sound and comfort while noting microphone limitations.",
@@ -38,19 +44,29 @@ def valid_insights(review_ids=None):
 
 
 class FakeAgent:
+    """Simulate the single structured agent while recording its invocation."""
+
     def __init__(self, insights):
+        """Store the structured response returned by the fake invocation."""
+
         self.insights = insights
         self.invocations = 0
         self.state = None
 
     def invoke(self, state):
+        """Record agent state and return the configured structured response."""
+
         self.invocations += 1
         self.state = state
         return {"structured_response": self.insights}
 
 
 class AnalyzerTests(unittest.TestCase):
+    """Group regression contracts for model setup and agent analysis."""
+
     def test_missing_provider_key_is_explicit(self):
+        """Require clear missing-key errors without revealing credential values."""
+
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaises(AnalysisError) as raised:
                 build_model("google")
@@ -63,6 +79,8 @@ class AnalyzerTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "missing_api_key")
 
     def test_one_agent_invocation_returns_validated_insights(self):
+        """Require one tool-free invocation with evidence-only structured output."""
+
         fake_agent = FakeAgent(valid_insights())
         factory = Mock(return_value=fake_agent)
         result = analyze_reviews(
@@ -86,6 +104,8 @@ class AnalyzerTests(unittest.TestCase):
         self.assertNotIn("author", message["content"].lower())
 
     def test_missing_unknown_or_duplicate_review_sentiment_ids_fail(self):
+        """Reject sentiment results that do not map exactly to submitted IDs."""
+
         for review_ids in (["r1"], ["r1", "unknown"], ["r1", "r1"]):
             with self.subTest(review_ids=review_ids):
                 invalid = valid_insights(review_ids=list(review_ids))
@@ -99,6 +119,8 @@ class AnalyzerTests(unittest.TestCase):
                 self.assertEqual(raised.exception.code, "analysis_failed")
 
     def test_provider_exception_is_sanitized(self):
+        """Hide provider exception details behind the safe analysis error."""
+
         agent = Mock()
         agent.invoke.side_effect = RuntimeError("provider response contained sensitive internals")
         with self.assertRaises(AnalysisError) as raised:

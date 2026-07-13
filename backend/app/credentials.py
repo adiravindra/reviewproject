@@ -8,6 +8,8 @@ import requests
 from backend.app.errors import AnalysisError
 from backend.app.models import Provider
 
+# Credential checks should fail quickly before collection or paid model work;
+# the tuple bounds connection setup separately from response waiting.
 VALIDATION_TIMEOUT = (3, 5)
 
 
@@ -22,6 +24,8 @@ class CredentialConfig:
     header_prefix: str = ""
 
 
+# Provider-specific constants centralize secret names and non-generative model
+# listing endpoints so preflight cannot accidentally prompt either provider.
 PROVIDER_CREDENTIALS = {
     "google": CredentialConfig(
         "Gemini",
@@ -40,7 +44,7 @@ PROVIDER_CREDENTIALS = {
 
 
 def validate_provider_credentials(provider: Provider, *, session=requests) -> None:
-    """Require the selected key and verify it through a non-generative endpoint."""
+    """Require the selected key and map non-generative preflight status safely."""
     config = PROVIDER_CREDENTIALS[provider]
     api_key = os.getenv(config.environment_variable, "").strip()
     if not api_key:
@@ -61,6 +65,8 @@ def validate_provider_credentials(provider: Provider, *, session=requests) -> No
             f"{config.display_name} credentials could not be validated. Analysis did not start; try again when the provider is reachable.",
         ) from None
 
+    # Only status codes influence the result. Provider response bodies are not
+    # consumed because they may contain unstable or sensitive diagnostics.
     if response.status_code in {400, 401, 403}:
         raise AnalysisError(
             "invalid_api_key",
