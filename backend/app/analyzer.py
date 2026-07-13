@@ -1,8 +1,8 @@
 """Produce schema-validated insights from supplied review evidence only.
 
-Provider integrations are imported lazily so an unused provider remains an
-optional dependency. Model construction and invocation errors are converted to
-the safe analysis boundary, and returned sentiment IDs must exactly match input.
+The required provider integrations are imported lazily only when their provider
+is selected. Model construction and invocation errors are converted to the safe
+analysis boundary, and returned sentiment IDs must exactly match input.
 """
 
 import json
@@ -10,6 +10,7 @@ import os
 
 from langchain.agents import create_agent
 
+from backend.app.credentials import get_provider_api_key
 from backend.app.errors import AnalysisError
 from backend.app.models import AgentInsights, Provider, Review
 
@@ -30,10 +31,9 @@ def build_model(provider: Provider):
     """Construct the selected chat model behind a sanitized failure boundary."""
 
     if provider == "google":
-        if not os.getenv("GOOGLE_API_KEY"):
-            raise AnalysisError("missing_api_key", "Set GOOGLE_API_KEY before using Gemini.")
+        api_key = get_provider_api_key(provider)
         try:
-            # Lazy imports let deployments install only the provider they use.
+            # Load the required integration only when its provider is selected.
             from langchain_google_genai import ChatGoogleGenerativeAI
 
             # Stable defaults make behavior reproducible, while environment
@@ -42,6 +42,7 @@ def build_model(provider: Provider):
             # keep provider work inside the dashboard's end-to-end time budget.
             return ChatGoogleGenerativeAI(
                 model=os.getenv("REVIEWINSIGHT_GOOGLE_MODEL", "gemini-2.5-flash-lite"),
+                google_api_key=api_key,
                 temperature=0,
                 timeout=30,
                 max_retries=0,
@@ -53,8 +54,7 @@ def build_model(provider: Provider):
 
     if provider != "groq":
         raise AnalysisError("analysis_failed", "The selected AI provider is not supported.")
-    if not os.getenv("GROQ_API_KEY"):
-        raise AnalysisError("missing_api_key", "Set GROQ_API_KEY before using Groq.")
+    api_key = get_provider_api_key(provider)
     try:
         # Keep provider package loading inside the same construction safeguard.
         from langchain_groq import ChatGroq
@@ -63,6 +63,7 @@ def build_model(provider: Provider):
         # policy, so switching providers does not change retry or timing semantics.
         return ChatGroq(
             model=os.getenv("REVIEWINSIGHT_GROQ_MODEL", "llama-3.3-70b-versatile"),
+            api_key=api_key,
             temperature=0,
             timeout=30,
             max_retries=0,

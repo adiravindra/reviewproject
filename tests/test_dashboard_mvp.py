@@ -4,6 +4,7 @@ import unittest
 
 import requests
 
+import dashboard.streamlit_app as streamlit_app
 from dashboard.api_client import ApiClientError, BackendUnavailable, check_health, request_analysis
 from dashboard.streamlit_app import DASHBOARD_CSS, metric_values, rating_rows, sentiment_rows
 
@@ -239,6 +240,16 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertIn(":has(input:checked)", DASHBOARD_CSS)
         self.assertIn('[data-testid="stToolbar"]', DASHBOARD_CSS)
         self.assertIn("#2563eb", DASHBOARD_CSS)
+
+    def test_recovery_guidance_uses_supported_full_application_command(self):
+        """Direct recovery through the supported supervisor entry point."""
+
+        self.assertTrue(hasattr(streamlit_app, "APP_COMMAND"))
+        self.assertEqual(
+            streamlit_app.APP_COMMAND,
+            r".\.venv\Scripts\python.exe run_app.py",
+        )
+        self.assertNotIn("uvicorn", streamlit_app.APP_COMMAND.lower())
 
     def test_metrics_and_charts_use_response_values(self):
         """Transform report values into deterministic metric and chart displays."""

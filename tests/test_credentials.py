@@ -1,11 +1,14 @@
 """Test non-generative credential preflight and sanitized status mapping."""
 
 import os
+import sys
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import requests
 
+from backend.app.analyzer import build_model
 from backend.app.credentials import validate_provider_credentials
 from backend.app.errors import AnalysisError
 
@@ -66,6 +69,58 @@ class CredentialTests(unittest.TestCase):
             validate_provider_credentials("groq", session=session)
         self.assertEqual(session.url, "https://api.groq.com/openai/v1/models")
         self.assertEqual(session.headers, {"Authorization": "Bearer groq-secret"})
+
+    def test_google_preflight_and_model_share_trimmed_selected_key(self):
+        """Pass one normalized Google credential to preflight and construction."""
+
+        session = FakeSession(FakeResponse(200))
+        constructor_calls = []
+
+        class FakeGoogleModel:
+            """Record the explicit Google constructor credential."""
+
+            def __init__(self, **kwargs):
+                """Capture keyword arguments supplied by the model factory."""
+
+                constructor_calls.append(kwargs)
+
+        fake_module = SimpleNamespace(ChatGoogleGenerativeAI=FakeGoogleModel)
+        with (
+            patch.dict(os.environ, {"GOOGLE_API_KEY": "  google-secret  "}, clear=True),
+            patch.dict(sys.modules, {"langchain_google_genai": fake_module}),
+        ):
+            validate_provider_credentials("google", session=session)
+            build_model("google")
+
+        self.assertEqual(session.headers, {"x-goog-api-key": "google-secret"})
+        self.assertIn("google_api_key", constructor_calls[0])
+        self.assertEqual(constructor_calls[0]["google_api_key"], "google-secret")
+
+    def test_groq_preflight_and_model_share_trimmed_selected_key(self):
+        """Pass one normalized Groq credential to preflight and construction."""
+
+        session = FakeSession(FakeResponse(200))
+        constructor_calls = []
+
+        class FakeGroqModel:
+            """Record the explicit Groq constructor credential."""
+
+            def __init__(self, **kwargs):
+                """Capture keyword arguments supplied by the model factory."""
+
+                constructor_calls.append(kwargs)
+
+        fake_module = SimpleNamespace(ChatGroq=FakeGroqModel)
+        with (
+            patch.dict(os.environ, {"GROQ_API_KEY": "  groq-secret  "}, clear=True),
+            patch.dict(sys.modules, {"langchain_groq": fake_module}),
+        ):
+            validate_provider_credentials("groq", session=session)
+            build_model("groq")
+
+        self.assertEqual(session.headers, {"Authorization": "Bearer groq-secret"})
+        self.assertIn("api_key", constructor_calls[0])
+        self.assertEqual(constructor_calls[0]["api_key"], "groq-secret")
 
     def test_missing_selected_key_stops_before_http(self):
         """Stop a missing selected credential before making any HTTP request."""

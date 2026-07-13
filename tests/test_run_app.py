@@ -3,13 +3,13 @@
 import subprocess
 import unittest
 
-from run_app import build_commands, run, stop_process
+from run_app import PROJECT_ROOT, build_commands, run, stop_process
 
 
 class FakeProcess:
     """Simulate a child process across running, exited, and stubborn states."""
 
-    def __init__(self, *, returncode=None, stubborn=False):
+    def __init__(self, *, returncode=None, stubborn=False, events=None):
         """Configure initial exit state and graceful-shutdown behavior."""
 
         self.returncode = returncode
@@ -18,20 +18,24 @@ class FakeProcess:
         self.killed = False
         self.waited = False
         self._wait_calls = 0
+        self.events = events if events is not None else []
 
     def poll(self):
         """Return the simulated child exit code without blocking."""
 
+        self.events.append("poll")
         return self.returncode
 
     def terminate(self):
         """Record a graceful termination request."""
 
+        self.events.append("terminate")
         self.terminated = True
 
     def wait(self, timeout=None):
         """Complete shutdown or simulate one graceful-timeout failure."""
 
+        self.events.append(("wait", timeout))
         self.waited = True
         self._wait_calls += 1
         if self.stubborn and self._wait_calls == 1:
@@ -42,6 +46,7 @@ class FakeProcess:
     def kill(self):
         """Record forced termination of a stubborn child."""
 
+        self.events.append("kill")
         self.killed = True
 
 
@@ -73,14 +78,56 @@ class RunAppTests(unittest.TestCase):
 
         backend, dashboard = build_commands(r"C:\Python\python.exe")
         self.assertEqual(
-            backend[:3], [r"C:\Python\python.exe", "-m", "uvicorn"]
+            backend,
+            [
+                r"C:\Python\python.exe",
+                "-m",
+                "uvicorn",
+                "backend.app.main:app",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8000",
+            ],
         )
-        self.assertIn("backend.app.main:app", backend)
         self.assertEqual(
-            dashboard[:4],
-            [r"C:\Python\python.exe", "-m", "streamlit", "run"],
+            dashboard,
+            [
+                r"C:\Python\python.exe",
+                "-m",
+                "streamlit",
+                "run",
+                "dashboard/streamlit_app.py",
+                "--server.address",
+                "127.0.0.1",
+                "--server.port",
+                "8501",
+                "--server.headless",
+                "true",
+            ],
         )
-        self.assertIn("dashboard/streamlit_app.py", dashboard)
+
+    def test_both_children_launch_from_project_root_without_shell(self):
+        """Launch exact argument arrays from the project root without a shell."""
+
+        fake_popen = FakePopen([FakeProcess(returncode=0), FakeProcess()])
+        self.assertEqual(
+            run(
+                popen=fake_popen,
+                sleep=lambda _: None,
+                python_executable=r"C:\Python\python.exe",
+            ),
+            1,
+        )
+        backend, dashboard = build_commands(r"C:\Python\python.exe")
+        self.assertEqual(
+            fake_popen.calls,
+            [
+                (backend, {"cwd": PROJECT_ROOT}),
+                (dashboard, {"cwd": PROJECT_ROOT}),
+            ],
+        )
+        self.assertTrue(all("shell" not in kwargs for _, kwargs in fake_popen.calls))
 
     def test_ctrl_c_terminates_and_waits_for_both_children(self):
         """Treat Ctrl+C as success after gracefully reaping both peers."""
@@ -122,11 +169,29 @@ class RunAppTests(unittest.TestCase):
     def test_stubborn_child_is_killed_after_graceful_timeout(self):
         """Escalate from terminate to kill after the shutdown grace period."""
 
-        stubborn_process = FakeProcess(stubborn=True)
+        events = []
+        stubborn_process = FakeProcess(stubborn=True, events=events)
 
-        stop_process(stubborn_process, timeout=0)
+        stop_process(stubborn_process, timeout=2.5)
 
         self.assertTrue(stubborn_process.killed)
+        self.assertEqual(
+            events,
+            ["poll", "terminate", ("wait", 2.5), "kill", ("wait", None)],
+        )
+
+    def test_already_exited_child_skips_shutdown_actions(self):
+        """Leave an already-reaped child untouched after the initial status check."""
+
+        events = []
+        process = FakeProcess(returncode=0, events=events)
+
+        stop_process(process)
+
+        self.assertEqual(events, ["poll"])
+        self.assertFalse(process.terminated)
+        self.assertFalse(process.killed)
+        self.assertFalse(process.waited)
 
 
 if __name__ == "__main__":

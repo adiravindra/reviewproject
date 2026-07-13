@@ -10,10 +10,7 @@ from dashboard.api_client import ApiClientError, BackendUnavailable, check_healt
 
 # Configuration and CSS tokens keep operational guidance and the primary blue
 # visual identity consistent across Streamlit widget implementations.
-BACKEND_COMMAND = (
-    r".\.venv\Scripts\python.exe -m uvicorn backend.app.main:app "
-    r"--host 127.0.0.1 --port 8000"
-)
+APP_COMMAND = r".\.venv\Scripts\python.exe run_app.py"
 
 DASHBOARD_CSS = """
 [data-testid="stToolbar"] {
@@ -205,8 +202,8 @@ def main() -> None:
         # is never displayed as if it belonged to the newly submitted URL.
         st.session_state.pop("latest_report", None)
         if not check_health(base_url):
-            st.error("The FastAPI backend is not reachable. Start it with:")
-            st.code(BACKEND_COMMAND, language="powershell")
+            st.error("The complete application is not reachable. Start or restart it with:")
+            st.code(APP_COMMAND, language="powershell")
         else:
             try:
                 with st.spinner("Analyzing public reviews…"):
@@ -218,8 +215,8 @@ def main() -> None:
             # Only curated client messages reach Streamlit; exception details and
             # operating-system diagnostics remain behind the client boundary.
             except BackendUnavailable:
-                st.error("The FastAPI backend is not reachable. Start it with:")
-                st.code(BACKEND_COMMAND, language="powershell")
+                st.error("The complete application is not reachable. Start or restart it with:")
+                st.code(APP_COMMAND, language="powershell")
             except ApiClientError as exc:
                 st.error(exc.message)
 

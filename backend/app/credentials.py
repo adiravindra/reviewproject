@@ -43,8 +43,9 @@ PROVIDER_CREDENTIALS = {
 }
 
 
-def validate_provider_credentials(provider: Provider, *, session=requests) -> None:
-    """Require the selected key and map non-generative preflight status safely."""
+def get_provider_api_key(provider: Provider) -> str:
+    """Return the selected provider's normalized credential or fail safely."""
+
     config = PROVIDER_CREDENTIALS[provider]
     api_key = os.getenv(config.environment_variable, "").strip()
     if not api_key:
@@ -52,6 +53,13 @@ def validate_provider_credentials(provider: Provider, *, session=requests) -> No
             "missing_api_key",
             f"Set {config.environment_variable} before using {config.display_name}.",
         )
+    return api_key
+
+
+def validate_provider_credentials(provider: Provider, *, session=requests) -> None:
+    """Require the selected key and map non-generative preflight status safely."""
+    config = PROVIDER_CREDENTIALS[provider]
+    api_key = get_provider_api_key(provider)
 
     try:
         response = session.get(

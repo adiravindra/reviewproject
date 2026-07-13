@@ -1,8 +1,10 @@
 """Test deterministic metrics and ordered end-to-end service orchestration."""
 
+import os
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
+from backend.app.credentials import validate_provider_credentials
 from backend.app.errors import AnalysisError
 from backend.app.models import AgentInsights, CollectionResult, Review, ReviewSentiment, SourceInfo
 from backend.app.service import calculate_metrics, run_analysis
@@ -155,6 +157,29 @@ class ServiceTests(unittest.TestCase):
                 analyzer=analyzer,
             )
         self.assertEqual(events, [("validate", "google")])
+        collector.assert_not_called()
+        analyzer.assert_not_called()
+
+    def test_missing_selected_key_stops_before_collection(self):
+        """Reject a missing selected key before the collector can make a request."""
+
+        collector = Mock()
+        analyzer = Mock()
+        with patch.dict(
+            os.environ,
+            {"GOOGLE_API_KEY": "   ", "GROQ_API_KEY": "unselected-key"},
+            clear=True,
+        ):
+            with self.assertRaises(AnalysisError) as raised:
+                run_analysis(
+                    "https://example.com/product",
+                    "google",
+                    credential_validator=validate_provider_credentials,
+                    collector=collector,
+                    analyzer=analyzer,
+                )
+
+        self.assertEqual(raised.exception.code, "missing_api_key")
         collector.assert_not_called()
         analyzer.assert_not_called()
 

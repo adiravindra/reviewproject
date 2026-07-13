@@ -5,6 +5,7 @@ import os
 import unittest
 from unittest.mock import Mock, patch
 
+import backend.app.analyzer as analyzer_module
 from backend.app.analyzer import analyze_reviews, build_model
 from backend.app.errors import AnalysisError
 from backend.app.models import AgentInsights, Review
@@ -77,6 +78,14 @@ class AnalyzerTests(unittest.TestCase):
             with self.assertRaises(AnalysisError) as raised:
                 build_model("groq")
         self.assertEqual(raised.exception.code, "missing_api_key")
+
+    def test_module_documents_required_lazy_provider_integrations(self):
+        """Describe integrations as required packages loaded only when selected."""
+
+        documentation = analyzer_module.__doc__.lower()
+        self.assertIn("required", documentation)
+        self.assertIn("lazily", documentation)
+        self.assertNotIn("optional dependency", documentation)
 
     def test_one_agent_invocation_returns_validated_insights(self):
         """Require one tool-free invocation with evidence-only structured output."""
