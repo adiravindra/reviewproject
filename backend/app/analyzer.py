@@ -1,0 +1,95 @@
+import json
+import os
+
+from langchain.agents import create_agent
+
+from backend.app.models import AgentInsights, Provider, Review
+
+
+SYSTEM_PROMPT = """You analyze customer reviews using only the supplied evidence.
+Return the requested structured response without inventing facts or product details.
+Write a concise overall summary and choose overall sentiment from the schema.
+Return 3-6 concise recurring themes with evidence-based descriptions and approximate mention counts.
+Return no more than five strengths, five weaknesses, and five actionable recommendations.
+For every submitted review ID, return exactly one sentiment entry, with no missing, duplicate, or unknown IDs.
+Use only the sentiment values permitted by the response schema.
+"""
+
+
+class AnalysisError(Exception):
+    def __init__(self, code: str, public_message: str):
+        super().__init__(public_message)
+        self.code = code
+        self.public_message = public_message
+
+
+def build_model(provider: Provider):
+    if provider == "google":
+        if not os.getenv("GOOGLE_API_KEY"):
+            raise AnalysisError("missing_api_key", "Set GOOGLE_API_KEY before using Gemini.")
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+
+            return ChatGoogleGenerativeAI(
+                model=os.getenv("REVIEWINSIGHT_GOOGLE_MODEL", "gemini-2.5-flash-lite"),
+                temperature=0,
+                timeout=30,
+                max_retries=0,
+            )
+        except AnalysisError:
+            raise
+        except Exception:
+            raise AnalysisError("analysis_failed", "The AI provider could not be initialized.") from None
+
+    if provider != "groq":
+        raise AnalysisError("analysis_failed", "The selected AI provider is not supported.")
+    if not os.getenv("GROQ_API_KEY"):
+        raise AnalysisError("missing_api_key", "Set GROQ_API_KEY before using Groq.")
+    try:
+        from langchain_groq import ChatGroq
+
+        return ChatGroq(
+            model=os.getenv("REVIEWINSIGHT_GROQ_MODEL", "llama-3.3-70b-versatile"),
+            temperature=0,
+            timeout=30,
+            max_retries=0,
+        )
+    except AnalysisError:
+        raise
+    except Exception:
+        raise AnalysisError("analysis_failed", "The AI provider could not be initialized.") from None
+
+
+def analyze_reviews(
+    reviews: list[Review],
+    provider: Provider,
+    *,
+    agent_factory=create_agent,
+    model_factory=build_model,
+) -> AgentInsights:
+    model = model_factory(provider)
+    agent = agent_factory(
+        model=model,
+        tools=[],
+        response_format=AgentInsights,
+        system_prompt=SYSTEM_PROMPT,
+    )
+    payload = [
+        {"id": review.id, "text": review.text, "rating": review.rating, "date": review.date}
+        for review in reviews
+    ]
+    try:
+        state = agent.invoke(
+            {"messages": [{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}]}
+        )
+        insights = AgentInsights.model_validate(state["structured_response"])
+    except AnalysisError:
+        raise
+    except Exception:
+        raise AnalysisError("analysis_failed", "The AI analysis could not be completed.") from None
+
+    expected = {review.id for review in reviews}
+    returned = [item.review_id for item in insights.review_sentiments]
+    if len(returned) != len(set(returned)) or set(returned) != expected:
+        raise AnalysisError("analysis_failed", "The AI analysis returned an incomplete result.")
+    return insights
