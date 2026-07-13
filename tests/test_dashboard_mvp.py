@@ -1,0 +1,163 @@
+import unittest
+
+import requests
+
+from dashboard.api_client import ApiClientError, BackendUnavailable, check_health, request_analysis
+from dashboard.streamlit_app import metric_values, rating_rows, sentiment_rows
+
+
+class FakeResponse:
+    def __init__(self, payload, *, status_code=200, content_type="application/json"):
+        self.payload = payload
+        self.status_code = status_code
+        self.headers = {"content-type": content_type}
+
+    def json(self):
+        return self.payload
+
+
+class FakeSession:
+    def __init__(self, *, get_response=None, post_status=200, post_json=None):
+        self.get_response = get_response or {"status": "ok"}
+        self.post_status = post_status
+        self.post_json = post_json or sample_report()
+        self.get_call = None
+        self.post_call = None
+
+    def get(self, url, timeout):
+        self.get_call = (url, timeout)
+        return FakeResponse(self.get_response)
+
+    def post(self, url, json, timeout):
+        self.post_call = (url, json, timeout)
+        return FakeResponse(self.post_json, status_code=self.post_status)
+
+
+class FailingSession:
+    def __init__(self, error):
+        self.error = error
+
+    def get(self, url, timeout):
+        raise self.error
+
+    def post(self, url, json, timeout):
+        raise self.error
+
+
+def sample_report():
+    return {
+        "source": {
+            "url": "https://example.com/product",
+            "title": "Everyday Headphones",
+            "extractor": "json_ld",
+        },
+        "metrics": {
+            "review_count": 3,
+            "rated_count": 2,
+            "average_rating": 4.0,
+            "positive_percentage": 66.7,
+            "sentiment_counts": {"positive": 2, "neutral": 0, "negative": 1},
+            "rating_distribution": {"1": 0, "2": 0, "3": 1, "4": 0, "5": 1},
+        },
+        "insights": {
+            "summary": "Customers value sound and comfort while noting microphone limitations.",
+            "overall_sentiment": "positive",
+            "themes": [
+                {
+                    "name": "Daily performance",
+                    "description": "Sound, comfort, and microphone quality shape the feedback.",
+                    "mentions": 3,
+                }
+            ],
+            "strengths": ["Clear sound", "Comfortable fit"],
+            "weaknesses": ["Microphone quality"],
+            "actions": ["Improve microphone noise handling"],
+            "review_sentiments": [
+                {"review_id": "r1", "sentiment": "positive"},
+                {"review_id": "r2", "sentiment": "positive"},
+                {"review_id": "r3", "sentiment": "negative"},
+            ],
+        },
+        "reviews": [
+            {"id": "r1", "text": "Clear sound and comfortable fit.", "rating": 5},
+            {"id": "r2", "text": "Battery is adequate for a normal day.", "rating": 3},
+            {"id": "r3", "text": "Microphone quality needs meaningful improvement.", "rating": None},
+        ],
+    }
+
+
+class DashboardClientTests(unittest.TestCase):
+    def test_health_uses_a_short_timeout(self):
+        session = FakeSession(get_response={"status": "ok"})
+        self.assertTrue(check_health("http://127.0.0.1:8000", session=session))
+        self.assertEqual(session.get_call, ("http://127.0.0.1:8000/health", 2))
+
+    def test_health_failure_returns_false_without_os_details(self):
+        session = FailingSession(requests.ConnectionError("OS detail"))
+        self.assertFalse(check_health("http://127.0.0.1:8000", session=session))
+
+    def test_connection_failure_is_backend_unavailable(self):
+        session = FailingSession(requests.ConnectionError("OS detail"))
+        with self.assertRaises(BackendUnavailable) as raised:
+            request_analysis(
+                "https://example.com",
+                "google",
+                "http://127.0.0.1:8000",
+                session=session,
+            )
+        self.assertNotIn("OS detail", str(raised.exception))
+
+    def test_structured_api_error_is_preserved(self):
+        session = FakeSession(
+            post_status=422,
+            post_json={
+                "detail": {
+                    "code": "no_reviews",
+                    "message": "At least two public reviews are required.",
+                }
+            },
+        )
+        with self.assertRaises(ApiClientError) as raised:
+            request_analysis(
+                "https://example.com",
+                "google",
+                "http://127.0.0.1:8000",
+                session=session,
+            )
+        self.assertEqual(raised.exception.code, "no_reviews")
+        self.assertEqual(str(raised.exception), "At least two public reviews are required.")
+
+    def test_analysis_uses_the_mvp_endpoint_and_long_timeout(self):
+        session = FakeSession()
+        report = request_analysis(
+            "https://example.com/product",
+            "groq",
+            "http://127.0.0.1:8000/",
+            session=session,
+        )
+        self.assertEqual(report["metrics"]["review_count"], 3)
+        self.assertEqual(
+            session.post_call,
+            (
+                "http://127.0.0.1:8000/api/analyze",
+                {"url": "https://example.com/product", "provider": "groq"},
+                45,
+            ),
+        )
+
+
+class DashboardFormattingTests(unittest.TestCase):
+    def test_metrics_and_charts_use_response_values(self):
+        report = sample_report()
+        self.assertEqual(metric_values(report), ("3", "4.0 / 5", "66.7%", "Positive"))
+        self.assertEqual(sentiment_rows(report)[0], {"Sentiment": "Positive", "Reviews": 2})
+        self.assertEqual(rating_rows(report)[4], {"Rating": "5 star", "Reviews": 1})
+
+    def test_missing_average_rating_has_a_clear_display(self):
+        report = sample_report()
+        report["metrics"]["average_rating"] = None
+        self.assertEqual(metric_values(report)[1], "Not rated")
+
+
+if __name__ == "__main__":
+    unittest.main()
