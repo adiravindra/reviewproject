@@ -5,6 +5,8 @@ import sys
 import time
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 # A tenth-second poll notices peer failure promptly without busy-spinning while
@@ -13,6 +15,12 @@ POLL_INTERVAL_SECONDS = 0.1
 # Five seconds gives frameworks time for graceful cleanup but prevents a stuck
 # child from hanging supervisor shutdown indefinitely.
 SHUTDOWN_TIMEOUT_SECONDS = 5.0
+
+
+def load_project_environment(*, loader=load_dotenv) -> None:
+    """Load project settings without replacing the parent environment."""
+
+    loader(PROJECT_ROOT / ".env", override=False)
 
 
 def build_commands(python_executable: str) -> tuple[list[str], list[str]]:
@@ -64,11 +72,19 @@ def run(
     popen=subprocess.Popen,
     sleep=time.sleep,
     python_executable=sys.executable,
+    load_environment=load_project_environment,
+    report=print,
 ) -> int:
     """Supervise both peers, stop survivors, and return user-oriented exit status."""
 
     backend = None
     dashboard = None
+    try:
+        load_environment()
+    except Exception:
+        report(f"Could not load configuration from {PROJECT_ROOT / '.env'}.")
+        return 1
+
     backend_command, dashboard_command = build_commands(python_executable)
     try:
         backend = popen(backend_command, cwd=PROJECT_ROOT)

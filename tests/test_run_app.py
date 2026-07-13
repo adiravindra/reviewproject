@@ -1,9 +1,36 @@
-"""Test peer-process supervision, shutdown escalation, and exit semantics."""
+"""Test environment loading, browser launch, and process supervision."""
 
+import os
 import subprocess
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
-from run_app import PROJECT_ROOT, build_commands, run, stop_process
+from run_app import (
+    PROJECT_ROOT,
+    build_commands,
+    load_project_environment,
+    run,
+    stop_process,
+)
+
+
+class RecordingEnvironmentLoader:
+    """Record dotenv loader calls and optionally simulate a loading failure."""
+
+    def __init__(self, *, error=None):
+        """Configure optional failure and initialize recorded calls."""
+
+        self.error = error
+        self.calls = []
+
+    def __call__(self, *args, **kwargs):
+        """Record a dotenv call or raise the configured safe-test error."""
+
+        self.calls.append((args, kwargs))
+        if self.error is not None:
+            raise self.error
 
 
 class FakeProcess:
@@ -72,6 +99,61 @@ class FakePopen:
 
 class RunAppTests(unittest.TestCase):
     """Group launcher command, lifecycle, and exit-code regression contracts."""
+
+    def test_project_environment_loads_root_dotenv_without_override(self):
+        """Anchor dotenv loading to the project root and preserve parent values."""
+
+        loader = RecordingEnvironmentLoader()
+
+        load_project_environment(loader=loader)
+
+        self.assertEqual(
+            loader.calls,
+            [((PROJECT_ROOT / ".env",), {"override": False})],
+        )
+
+    def test_existing_environment_value_takes_precedence_over_dotenv(self):
+        """Keep a process value when the project dotenv defines the same name."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".env").write_text(
+                "GROQ_API_KEY=dotenv-value\n",
+                encoding="utf-8",
+            )
+            with (
+                patch("run_app.PROJECT_ROOT", root),
+                patch.dict(
+                    os.environ,
+                    {"GROQ_API_KEY": "process-value"},
+                    clear=True,
+                ),
+            ):
+                load_project_environment()
+                self.assertEqual(os.environ["GROQ_API_KEY"], "process-value")
+
+    def test_environment_load_failure_stops_before_child_start(self):
+        """Return safely before starting children when dotenv loading raises."""
+
+        loader = RecordingEnvironmentLoader(error=OSError("secret file details"))
+        fake_popen = FakePopen([])
+        messages = []
+
+        self.assertEqual(
+            run(
+                popen=fake_popen,
+                load_environment=lambda: load_project_environment(loader=loader),
+                report=messages.append,
+            ),
+            1,
+        )
+
+        self.assertEqual(fake_popen.calls, [])
+        self.assertEqual(
+            messages,
+            [f"Could not load configuration from {PROJECT_ROOT / '.env'}."],
+        )
+        self.assertNotIn("secret file details", messages[0])
 
     def test_commands_use_current_python_without_a_shell(self):
         """Build argument lists around the supplied current interpreter."""
