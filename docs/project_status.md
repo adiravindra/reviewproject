@@ -1,7 +1,7 @@
 # Project Status
 
 **Date:** July 17, 2026
-**Status:** Groq-only staged MVP implemented; final live-source and Chrome verification is recorded during the release smoke test.
+**Status:** Groq-only staged MVP implemented and release-smoke-tested locally in Google Chrome.
 
 ## Current feature inventory
 
@@ -45,9 +45,19 @@ Run the full local checks with:
 .\.venv\Scripts\python.exe -m compileall -q backend dashboard tests run_app.py
 ```
 
-## Final verification checklist
+## Final verification record
 
-The release smoke test runs the supervised app with the existing local environment and installed Google Chrome. It verifies a live extraction, evidence display before analysis, Groq analysis, semantic result labels, history persistence and reload, explicit demo behavior, and representative safe errors. It records only key presence, never its value.
+On July 17, 2026, the merged project-root suite passed **121/121 tests** and `compileall` exited successfully. The existing `GROQ_API_KEY` was confirmed present without reading or printing its value.
+
+The supervised application was then opened in installed Google Chrome and verified end to end:
+
+- `https://web-scraping.dev/product/1` collected five JSON-LD reviews; the evidence table was visible before Groq analysis.
+- Groq analysis completed for that live collection and saved a positive report to SQLite history.
+- Invalid URL and no-review submissions displayed the expected safe, actionable errors; failed collection did not switch to demo data.
+- The explicit demo action displayed its `🧪 DEMO DATA` label, ten bundled reviews, and a mixed Groq report with labeled positive, negative, neutral, and mixed findings.
+- Refreshing history after a browser reload restored saved live and demo reports, including demo provenance.
+
+The Chrome console had no application errors. Streamlit/Vega emitted non-fatal chart warnings for zero-valued series; charts still rendered with the expected data and labels.
 
 ## Known limitations
 
