@@ -9,10 +9,13 @@ from urllib.error import URLError
 from unittest.mock import patch
 
 from run_app import (
+    BACKEND_HEALTH_URL,
     DASHBOARD_HEALTH_URL,
     DASHBOARD_URL,
     PROJECT_ROOT,
     READINESS_REQUEST_TIMEOUT_SECONDS,
+    STARTUP_TIMEOUT_SECONDS,
+    backend_is_ready,
     build_commands,
     dashboard_is_ready,
     load_project_environment,
@@ -41,10 +44,11 @@ class RecordingEnvironmentLoader:
 class FakeHealthResponse:
     """Provide the response context and status used by readiness tests."""
 
-    def __init__(self, status):
+    def __init__(self, status, body=b''):
         """Store the HTTP status returned by the fake context manager."""
 
         self.status = status
+        self.body = body
 
     def __enter__(self):
         """Return this fake as the opened response context."""
@@ -55,6 +59,11 @@ class FakeHealthResponse:
         """Leave the fake response context without suppressing errors."""
 
         return False
+
+    def read(self, *_):
+        """Return the configured response content for JSON decoding."""
+
+        return self.body
 
 
 class SequenceResult:
@@ -210,6 +219,23 @@ class RunAppTests(unittest.TestCase):
             [(DASHBOARD_HEALTH_URL, READINESS_REQUEST_TIMEOUT_SECONDS)],
         )
 
+    def test_backend_readiness_requires_the_expected_health_response(self):
+        """Probe the backend health contract with the bounded local request."""
+
+        calls = []
+
+        def urlopen(url, *, timeout):
+            """Record the readiness request and return the healthy payload."""
+
+            calls.append((url, timeout))
+            return FakeHealthResponse(200, b'{"status": "ok"}')
+
+        self.assertTrue(backend_is_ready(urlopen=urlopen))
+        self.assertEqual(
+            calls,
+            [(BACKEND_HEALTH_URL, READINESS_REQUEST_TIMEOUT_SECONDS)],
+        )
+
     def test_dashboard_readiness_treats_transient_failures_as_not_ready(self):
         """Convert local connection failures into a retryable not-ready result."""
 
@@ -245,6 +271,7 @@ class RunAppTests(unittest.TestCase):
                 popen=fake_popen,
                 sleep=sleep,
                 load_environment=lambda: None,
+                backend_ready=lambda: True,
                 dashboard_ready=readiness,
                 open_browser=lambda url: opened.append(url) or True,
             ),
@@ -252,6 +279,60 @@ class RunAppTests(unittest.TestCase):
         )
 
         self.assertEqual(opened, [DASHBOARD_URL])
+
+    def test_browser_waits_until_backend_and_dashboard_are_ready(self):
+        """Open only after both local application peers report healthy."""
+
+        backend_ready = SequenceResult([False, True])
+        dashboard_ready = SequenceResult([True, True])
+        opened = []
+        sleep_calls = 0
+
+        def sleep(_):
+            """Stop the simulated supervisor after the readiness transition."""
+
+            nonlocal sleep_calls
+            sleep_calls += 1
+            if sleep_calls == 3:
+                raise KeyboardInterrupt
+
+        result = run(
+            popen=FakePopen([FakeProcess(), FakeProcess()]),
+            sleep=sleep,
+            load_environment=lambda: None,
+            backend_ready=backend_ready,
+            dashboard_ready=dashboard_ready,
+            open_browser=lambda url: opened.append(url) or True,
+        )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(opened, [DASHBOARD_URL])
+
+    def test_startup_timeout_stops_children_without_opening_browser(self):
+        """Bound a never-ready startup and report the safe timeout guidance."""
+
+        fake_popen = FakePopen([FakeProcess(), FakeProcess()])
+        messages = []
+        opened = []
+
+        result = run(
+            popen=fake_popen,
+            sleep=lambda _: None,
+            load_environment=lambda: None,
+            backend_ready=lambda: False,
+            dashboard_ready=lambda: False,
+            monotonic=SequenceResult([0.0, STARTUP_TIMEOUT_SECONDS]),
+            open_browser=lambda url: opened.append(url) or True,
+            report=messages.append,
+        )
+
+        self.assertEqual(result, 1)
+        self.assertTrue(all(process.terminated for process in fake_popen.processes))
+        self.assertEqual(opened, [])
+        self.assertEqual(
+            messages,
+            ["The application did not become ready within 30 seconds."],
+        )
 
     def test_browser_failure_reports_manual_url_and_keeps_supervising(self):
         """Report a manual URL while preserving supervision on a false result."""
@@ -273,6 +354,7 @@ class RunAppTests(unittest.TestCase):
                 popen=fake_popen,
                 sleep=sleep,
                 load_environment=lambda: None,
+                backend_ready=lambda: True,
                 dashboard_ready=lambda: True,
                 open_browser=lambda _: False,
                 report=messages.append,
@@ -317,6 +399,7 @@ class RunAppTests(unittest.TestCase):
                 popen=fake_popen,
                 sleep=sleep,
                 load_environment=lambda: None,
+                backend_ready=lambda: True,
                 dashboard_ready=lambda: True,
                 open_browser=open_browser,
                 report=messages.append,
