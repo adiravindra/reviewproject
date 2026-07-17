@@ -2,6 +2,7 @@
 
 import inspect
 import unittest
+from unittest.mock import patch
 
 import requests
 
@@ -496,6 +497,74 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertIn("@media (max-width: 900px)", DASHBOARD_CSS)
         self.assertIn("@media (max-width: 640px)", DASHBOARD_CSS)
 
+    def test_compact_evidence_keeps_rows_without_repeating_the_section_heading(self):
+        """Keep pre-analysis evidence prominent and make only the report duplicate compact."""
+
+        class EvidenceRecorder:
+            """Record the evidence widgets emitted by one render mode."""
+
+            def __init__(self):
+                """Initialize captured section headings and dataframes."""
+
+                self.subheaders = []
+                self.dataframes = []
+
+            def subheader(self, label):
+                """Capture a rendered evidence section heading."""
+
+                self.subheaders.append(label)
+
+            def header(self, label):
+                """Capture a legacy top-level heading if one is rendered."""
+
+                self.subheaders.append(label)
+
+            def caption(self, _label):
+                """Accept supporting copy without affecting the assertion state."""
+
+                return None
+
+            def dataframe(self, rows, **options):
+                """Capture normalized rows and display options."""
+
+                self.dataframes.append((rows, options))
+
+            def info(self, _message):
+                """Accept the empty-evidence message for recorder completeness."""
+
+                return None
+
+        collection = {
+            "source": {"extractor": "json_ld"},
+            "reviews": [{"id": "r1", "text": "Visible evidence", "rating": 5}],
+        }
+        full = EvidenceRecorder()
+        compact = EvidenceRecorder()
+
+        self.assertIn("compact", inspect.signature(streamlit_app._render_evidence).parameters)
+        with patch.object(streamlit_app, "st", full):
+            streamlit_app._render_evidence(collection)
+        with patch.object(streamlit_app, "st", compact):
+            streamlit_app._render_evidence(collection, compact=True)
+
+        self.assertEqual(full.subheaders, ["Review evidence"])
+        self.assertEqual(compact.subheaders, [])
+        self.assertEqual(full.dataframes[0][0][0]["Review"], "Visible evidence")
+        self.assertEqual(compact.dataframes[0][0][0]["Review"], "Visible evidence")
+        self.assertGreater(full.dataframes[0][1]["height"], compact.dataframes[0][1]["height"])
+
+    def test_report_layout_consumes_escaped_semantic_markup_primitives(self):
+        """Compose the report grids only through helpers that escape live values."""
+
+        report_source = inspect.getsource(streamlit_app._render_report)
+        themes_source = inspect.getsource(streamlit_app._render_themes)
+        for call in ("safe_metric_card_markup", "safe_badge_markup", "safe_panel_markup", "html.escape"):
+            self.assertIn(call, report_source)
+        self.assertIn("safe_theme_card_markup", themes_source)
+        self.assertIn("ri-metric-grid", report_source)
+        self.assertIn("ri-theme-grid", themes_source)
+        self.assertIn("ri-insight-grid", report_source)
+
     def test_history_option_exposes_source_time_sentiment_and_demo_status(self):
         """Make stored history provenance recognizable without loading its report."""
 
@@ -537,6 +606,12 @@ class DashboardFormattingTests(unittest.TestCase):
             self.assertNotIn(retired, source)
         self.assertIn("request_demo", source)
         self.assertIn("DEMO DATA", source)
+        self.assertIn('st.expander("Supporting review evidence"', source)
+        self.assertIn("Executive summary", source)
+        self.assertIn("Customer signals", source)
+        self.assertIn("Recommended actions", source)
+        self.assertIn("How it works", source)
+        self.assertNotIn('st.header("Extracted reviews (evidence)")', source)
         self.assertNotIn("except BackendUnavailable:\n                st.session_state[\"collection\"] = request_demo", source)
 
 

@@ -93,7 +93,31 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible {
 [data-testid="stDataFrame"] { border: 1px solid var(--ri-border); border-radius: 12px; overflow: hidden; }
 .ri-badge { display: inline-block; padding: .28rem .55rem; border-radius: 999px; border: 1px solid; font-weight: 700; font-size: .88rem; }
 .ri-card { border: 1px solid var(--ri-border); border-radius: 14px; padding: .9rem 1rem; margin: .45rem 0; background: #ffffff; }
+.ri-process-strip {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--ri-space-4);
+    border: 1px solid var(--ri-border);
+    border-radius: var(--ri-radius-card);
+    padding: var(--ri-space-4);
+    margin: var(--ri-space-4) 0 var(--ri-space-6);
+}
+.ri-process-step { display: flex; align-items: flex-start; gap: var(--ri-space-3); min-width: 0; }
+.ri-process-step__number {
+    display: grid;
+    place-items: center;
+    flex: 0 0 2rem;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 999px;
+    color: var(--ri-blue);
+    background: #eff6ff;
+    font-weight: 750;
+}
+.ri-process-step strong { display: block; color: var(--ri-navy); margin-bottom: var(--ri-space-1); }
+.ri-process-step p { color: var(--ri-slate); font-size: var(--ri-font-label); line-height: 1.55; margin: 0; }
 .ri-report-hero,
+.ri-summary-card,
 .ri-chart-card {
     border: 1px solid var(--ri-border);
     border-radius: var(--ri-radius-surface);
@@ -101,7 +125,15 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible {
     box-shadow: var(--ri-shadow-surface);
 }
 .ri-report-hero { padding: var(--ri-space-6); margin: var(--ri-space-4) 0; }
+.ri-report-hero__content { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--ri-space-4); }
+.ri-report-hero h2 { font-size: var(--ri-font-section); margin: 0 0 var(--ri-space-2); }
+.ri-report-hero p { color: var(--ri-slate); line-height: 1.55; margin: 0; overflow-wrap: anywhere; }
+.ri-summary-card { padding: var(--ri-space-4); margin: var(--ri-space-4) 0; }
+.ri-summary-card h3 { font-size: 1rem; margin: 0 0 var(--ri-space-2); }
+.ri-summary-card p { color: var(--ri-navy); line-height: 1.65; margin: 0; }
 .ri-chart-card { padding: var(--ri-space-4); min-width: 0; }
+.st-key-ri_sentiment_chart_card,
+.st-key-ri_rating_chart_card { min-width: 0; }
 .ri-metric-grid,
 .ri-insight-grid,
 .ri-theme-grid,
@@ -113,6 +145,7 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible {
 .ri-metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .ri-insight-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .ri-theme-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.ri-theme-grid .ri-card { height: 100%; margin: 0; }
 .ri-chart-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .ri-metric-card,
 .ri-insight-panel {
@@ -154,6 +187,11 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible {
 @media (max-width: 900px) {
     .ri-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .ri-chart-grid { grid-template-columns: 1fr; }
+    [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: .7rem; }
+    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
+        flex: 1 1 100% !important;
+        min-width: 100% !important;
+    }
 }
 @media (max-width: 640px) {
     .block-container { padding: 1.35rem 1rem 3rem; }
@@ -161,10 +199,13 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible {
     [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: .7rem; }
     [data-testid="stSidebar"] { border-right: 0; }
     .ri-report-hero,
+    .ri-summary-card,
     .ri-chart-card,
     .ri-metric-card,
     .ri-insight-panel { border-radius: var(--ri-radius-card); }
     .ri-report-hero { padding: var(--ri-space-4); }
+    .ri-report-hero__content { flex-direction: column; }
+    .ri-process-strip { grid-template-columns: 1fr; }
     .ri-insight-grid,
     .ri-theme-grid { grid-template-columns: 1fr; }
 }
@@ -362,7 +403,7 @@ def _demo_notice() -> None:
 
 
 def _render_source(collection: dict[str, Any]) -> None:
-    """Render source provenance using normal Streamlit text widgets."""
+    """Render the collected source and its provenance as one concise summary."""
 
     source = collection.get("source", {})
     st.subheader(str(source.get("title", "Extracted reviews")))
@@ -372,13 +413,17 @@ def _render_source(collection: dict[str, Any]) -> None:
     st.caption(" · ".join(details))
 
 
-def _render_evidence(collection: dict[str, Any], report: dict[str, Any] | None = None) -> None:
-    """Render readable normalized review evidence before and after analysis."""
+def _render_evidence(
+    collection: dict[str, Any], report: dict[str, Any] | None = None, *, compact: bool = False
+) -> None:
+    """Render normalized evidence prominently or in a compact report duplicate."""
 
-    st.header("Extracted reviews (evidence)")
+    if not compact:
+        st.subheader("Review evidence")
+        st.caption("Inspect the normalized public reviews before starting analysis.")
     rows = review_rows(collection, report)
     if rows:
-        st.dataframe(rows, hide_index=True, width="stretch")
+        st.dataframe(rows, hide_index=True, width="stretch", height=320 if compact else 520)
     else:
         st.info("No normalized reviews are available yet.")
 
@@ -394,58 +439,92 @@ def _render_list(items: list[Any]) -> None:
 
 
 def _render_themes(themes: list[dict[str, Any]]) -> None:
-    """Render theme cards with each live theme's semantic treatment."""
+    """Render escaped semantic theme cards in the responsive report grid."""
 
-    st.header("Recurring themes")
+    st.subheader("Recurring themes")
     if not themes:
         st.info("No recurring themes were returned.")
         return
+    cards = []
     for theme in themes:
         visual = sentiment_visual(str(theme.get("sentiment", "neutral")))
         title = str(theme.get("name", "Unnamed theme"))
         description = str(theme.get("description", ""))
         mentions = theme.get("mentions", 0)
-        st.markdown(safe_theme_card_markup(visual, title, description, mentions), unsafe_allow_html=True)
+        cards.append(safe_theme_card_markup(visual, title, description, mentions))
+    st.markdown(f'<section class="ri-theme-grid">{"".join(cards)}</section>', unsafe_allow_html=True)
 
 
 def _render_report(report: dict[str, Any], collection: dict[str, Any]) -> None:
-    """Render live report metrics, findings, charts, provenance, and review labels."""
+    """Render the analysis report in the approved evidence-first scan order."""
 
     source = report.get("source", collection.get("source", {}))
     if source.get("is_demo") is True:
         _demo_notice()
 
-    st.header("Analysis results")
+    insights = report.get("insights", {})
+    overall = sentiment_visual(str(insights.get("overall_sentiment", "neutral")))
+    report_reviews = report.get("reviews", collection.get("reviews", []))
+    evidence_collection = {"source": source, "reviews": report_reviews}
+    source_details = [
+        f"Extractor: {_extractor_label(source.get('extractor'))}",
+        f"Reviews: {len(report_reviews)}",
+    ]
+    if source.get("url"):
+        source_details.insert(0, f"Source: {source['url']}")
+    safe_source_title = html.escape(str(source.get("title", "Review analysis")))
+    safe_source_details = " · ".join(html.escape(str(detail)) for detail in source_details)
+    st.markdown(
+        '<section class="ri-report-hero"><div class="ri-report-hero__content">'
+        f"<div><h2>{safe_source_title}</h2><p>{safe_source_details}</p></div>"
+        f'{safe_badge_markup(overall, overall.label)}</div></section>',
+        unsafe_allow_html=True,
+    )
+
     values = metric_values(report)
-    for column, label, value in zip(st.columns(4), ("Reviews analyzed", "Average rating", "Positive share", "Overall sentiment"), values):
-        column.metric(label, value)
+    metric_specs = (
+        ("Reviews analyzed", values[0], "Normalized evidence", "mixed"),
+        ("Average rating", values[1], "Rated on a five-point scale", "neutral"),
+        ("Positive share", values[2], "Share of analyzed reviews", "positive"),
+        ("Overall sentiment", values[3], "Customer signal", overall.semantic),
+    )
+    metric_cards = "".join(safe_metric_card_markup(*spec) for spec in metric_specs)
+    st.markdown(f'<section class="ri-metric-grid">{metric_cards}</section>', unsafe_allow_html=True)
 
-    overall = sentiment_visual(str(report.get("insights", {}).get("overall_sentiment", "neutral")))
-    st.markdown(safe_badge_markup(overall, f"Overall sentiment: {overall.label}"), unsafe_allow_html=True)
-    st.write(str(report.get("insights", {}).get("summary", "No summary was returned.")))
+    summary = html.escape(str(insights.get("summary", "No summary was returned.")))
+    st.markdown(
+        '<section class="ri-summary-card"><h3>Executive summary</h3>'
+        f"<p>{summary}</p></section>",
+        unsafe_allow_html=True,
+    )
 
+    st.subheader("Customer signals")
     chart_columns = st.columns(2)
     with chart_columns[0]:
-        st.subheader("Sentiment mix")
-        st.bar_chart(sentiment_rows(report), x="Sentiment", y="Reviews")
+        with st.container(border=True, key="ri_sentiment_chart_card"):
+            st.subheader("Sentiment mix")
+            st.bar_chart(sentiment_rows(report), x="Sentiment", y="Reviews")
     with chart_columns[1]:
-        st.subheader("Rating distribution")
-        st.bar_chart(rating_rows(report), x="Rating", y="Reviews")
+        with st.container(border=True, key="ri_rating_chart_card"):
+            st.subheader("Rating distribution")
+            st.bar_chart(rating_rows(report), x="Rating", y="Reviews")
 
-    insights = report.get("insights", {})
     _render_themes(list(insights.get("themes", [])))
-    finding_columns = st.columns(2)
-    with finding_columns[0]:
-        st.markdown(safe_badge_markup(_VISUALS["positive"], "Strengths"), unsafe_allow_html=True)
-        _render_list(list(insights.get("strengths", [])))
-    with finding_columns[1]:
-        st.markdown(safe_badge_markup(_VISUALS["negative"], "Complaints"), unsafe_allow_html=True)
-        _render_list(list(insights.get("weaknesses", [])))
-    st.info("Recommended actions")
-    _render_list(list(insights.get("actions", [])))
+    strengths = list(insights.get("strengths", [])) or ["No strengths were returned."]
+    concerns = list(insights.get("weaknesses", [])) or ["No concerns were returned."]
+    actions = list(insights.get("actions", [])) or ["No recommended actions were returned."]
+    insight_panels = "".join(
+        (
+            safe_panel_markup(_VISUALS["positive"], "Strengths", strengths),
+            safe_panel_markup(_VISUALS["negative"], "Concerns", concerns),
+            safe_panel_markup(_VISUALS["mixed"], "Recommended actions", actions),
+        )
+    )
+    st.markdown(f'<section class="ri-insight-grid">{insight_panels}</section>', unsafe_allow_html=True)
 
-    _render_source({"source": source, "reviews": report.get("reviews", collection.get("reviews", []))})
-    _render_evidence({"source": source, "reviews": report.get("reviews", collection.get("reviews", []))}, report)
+    with st.expander("Supporting review evidence", expanded=False):
+        _render_source(evidence_collection)
+        _render_evidence(evidence_collection, report, compact=True)
 
 
 def _load_history(base_url: str) -> None:
@@ -485,6 +564,7 @@ def _render_history(base_url: str) -> None:
 
     with st.sidebar:
         st.header("History")
+        st.caption("Refresh and reopen a saved analysis report.")
         if st.button("Refresh history", width="stretch"):
             _load_history(base_url)
         items = st.session_state.get("history_items", [])
@@ -518,32 +598,55 @@ def main() -> None:
     st.caption("Extract normalized public reviews, inspect the evidence, then analyze customer signals with Groq.")
     with st.form("review-extraction-form"):
         url = st.text_input("Review page URL", placeholder="https://example.com/product")
-        extracted = st.form_submit_button("Extract reviews", type="primary", width="stretch")
+        action_columns = st.columns(2)
+        with action_columns[0]:
+            extracted = st.form_submit_button("Extract reviews", type="primary", width="stretch")
+        with action_columns[1]:
+            demo_selected = st.form_submit_button("Use bundled demo data", width="stretch")
     if extracted:
         _new_collection(base_url, url.strip())
-    if st.button("Use bundled demo data", width="stretch"):
+    if demo_selected:
         _new_collection(base_url)
+
+    st.subheader("How it works")
+    st.markdown(
+        """
+        <section class="ri-process-strip">
+            <div class="ri-process-step"><span class="ri-process-step__number">1</span>
+                <div><strong>Extract</strong><p>Collect normalized public reviews from the product page.</p></div>
+            </div>
+            <div class="ri-process-step"><span class="ri-process-step__number">2</span>
+                <div><strong>Review evidence</strong><p>Inspect the source and normalized review text.</p></div>
+            </div>
+            <div class="ri-process-step"><span class="ri-process-step__number">3</span>
+                <div><strong>Analyze</strong><p>Generate sentiment, themes, and recommended actions.</p></div>
+            </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
 
     collection = st.session_state.get("collection")
     report = st.session_state.get("latest_report")
     if isinstance(collection, dict) and not isinstance(report, dict):
-        source = collection.get("source", {})
-        if source.get("is_demo") is True:
-            _demo_notice()
-        _render_source(collection)
-        _render_evidence(collection, report if isinstance(report, dict) else None)
-        if report is None and st.button("Analyze with Groq", type="primary", width="stretch"):
-            if not check_health(base_url):
-                _unavailable()
-            else:
-                try:
-                    with st.spinner("Analyzing normalized review evidence…"):
-                        st.session_state["latest_report"] = analysis_call(collection, base_url)
-                    _load_history(base_url)
-                except BackendUnavailable:
+        with st.container(border=True, key="ri_evidence_workspace"):
+            source = collection.get("source", {})
+            if source.get("is_demo") is True:
+                _demo_notice()
+            _render_source(collection)
+            _render_evidence(collection)
+            if report is None and st.button("Analyze with Groq", type="primary", width="stretch"):
+                if not check_health(base_url):
                     _unavailable()
-                except ApiClientError as exc:
-                    st.error(exc.message)
+                else:
+                    try:
+                        with st.spinner("Analyzing normalized review evidence…"):
+                            st.session_state["latest_report"] = analysis_call(collection, base_url)
+                        _load_history(base_url)
+                    except BackendUnavailable:
+                        _unavailable()
+                    except ApiClientError as exc:
+                        st.error(exc.message)
     if isinstance(st.session_state.get("latest_report"), dict) and isinstance(st.session_state.get("collection"), dict):
         _render_report(st.session_state["latest_report"], st.session_state["collection"])
 
