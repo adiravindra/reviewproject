@@ -1,47 +1,58 @@
 # Project Status
 
-**Date:** July 13, 2026
-**Status:** ReviewInsight MVP implemented with supervised startup and credential preflight
+**Date:** July 17, 2026
+**Status:** Groq-only staged MVP implemented; final live-source and Chrome verification is recorded during the release smoke test.
 
 ## Current feature inventory
 
-- One root startup command, `.\.venv\Scripts\python.exe run_app.py`, loads the repository-root `.env`, launches FastAPI on `127.0.0.1:8000` and Streamlit on `127.0.0.1:8501`, then opens the ready dashboard in the operating system's default browser.
-- Existing shell and system environment values take precedence over matching `.env` values; both child services inherit the same resulting configuration.
-- The supervisor uses the current interpreter and argument-list child commands, waits on Streamlit's local health endpoint before one browser-open attempt, returns nonzero on startup or unexpected child failure, stops a surviving peer, and cleans up both children on `Ctrl+C`.
-- Gemini and Groq credentials are checked through non-generative model-list endpoints before destination resolution, review collection, model construction, or AI analysis.
-- Missing, rejected, unavailable, rate-limited, and transport-failed credential checks map to stable safe codes without exposing keys, headers, provider bodies, or internal exceptions.
-- The static collector enforces public destinations and redirect revalidation, streams at most 1 MiB of HTML, prefers JSON-LD, recognizes conservative review cards, deduplicates exact text, requires two reviews, and caps output at 40.
-- One structured LangChain agent invocation returns bounded insights and an exact review-level sentiment mapping from Gemini or Groq.
-- Counts, rating aggregates, sentiment distribution, and rating distribution are calculated deterministically in Python.
-- FastAPI exposes only `GET /health` and `POST /api/analyze`, with validated response schemas and explicit public status mappings.
-- The Streamlit dashboard provides provider selection, readiness checks, safe error rendering, four headline metrics, two charts, summary, themes, strengths, weaknesses, actions, and review evidence.
-- Every retained Python module, class, function, and test helper has descriptive docstring coverage.
-- The repository retains only active runtime, test fixture, operational documentation, and current design/plan artifacts; generated runtime output is ignored.
+- `run_app.py` retains the local FastAPI + Streamlit supervisor. It loads the repository-root `.env` without overriding existing shell or system values, starts FastAPI on `127.0.0.1:8000` and Streamlit on `127.0.0.1:8501`, waits for Streamlit readiness, and opens the dashboard in the operating system's default browser.
+- The UI accepts a public review-page URL, calls `POST /api/collect`, and displays normalized evidence before analysis. Collection is static HTTP only and prefers JSON-LD before conservative HTML review cards.
+- `GET /api/demo` loads the ten-review bundled local dataset only after the user selects **Use bundled demo data**. Demo provenance is visible with `🧪 DEMO DATA`; failed live extraction never activates that dataset.
+- `POST /api/analyze` accepts the already displayed source and review evidence, validates `GROQ_API_KEY`, uses the Llama Versatile Groq configuration, validates structured insights, and computes metrics in Python.
+- The Streamlit report uses text, icons, and distinct semantic treatments for positive, negative, neutral, and mixed results. It surfaces strengths, complaints, themes, actions, charts, and review-level sentiment labels without relying on color alone.
+- Successful reports are written atomically to local SQLite at `data/review_history.db`. `GET /api/history` returns newest-first summaries, and `GET /api/history/{run_id}` restores one saved report.
+- The backend exposes safe actionable errors for invalid URLs, blocked sites, timeouts, malformed structured review data, missing reviews, missing or invalid Groq configuration, unavailable Groq validation, model-output parsing, and history failures.
+- Credentials, headers, raw AI responses, upstream response bodies, internal exceptions, and tracebacks do not cross the FastAPI boundary.
 
-## Current test inventory
+## Runtime and configuration
 
-The discovered suite contains 60 deterministic tests and makes no live website or AI-provider calls.
+The active non-secret settings are:
 
-- `tests/test_credentials.py`: provider endpoint, header, timeout, missing-key, rejected-key, availability, and sanitization contracts.
-- `tests/test_run_app.py`: project-root dotenv precedence, readiness probing, one-time browser opening, child command construction, interrupt cleanup, peer exit, startup failure, and forced-shutdown escalation.
-- `tests/test_documentation.py`: startup-documentation, retained-source discovery, and module/class/function docstring enforcement.
-- `tests/test_collector_mvp.py`: public-address safety, redirects, streamed limits, extraction, deduplication, minimum review count, and cap.
-- `tests/test_analyzer_mvp.py`: direct key safeguards, one structured invocation, exact sentiment IDs, and sanitized provider errors.
-- `tests/test_service_mvp.py`: preflight-before-collection ordering, one-pass orchestration, and deterministic metrics.
-- `tests/test_api_mvp.py`: route surface, validation, safe envelopes, credential statuses, and generic unexpected failures.
-- `tests/test_dashboard_mvp.py`: health and analysis timeouts, safe client errors, backend unavailability, metrics, charts, and visual tokens.
+```dotenv
+REVIEWINSIGHT_API_URL=http://127.0.0.1:8000
+GROQ_API_KEY=
+REVIEWINSIGHT_GROQ_MODEL=llama-3.3-70b-versatile
+```
 
-Current verification commands are:
+`GROQ_API_KEY` is required only when analysis begins. It is never entered through the UI. The model override is optional; the default remains `llama-3.3-70b-versatile`.
+
+## Automated coverage
+
+Focused tests cover:
+
+- strict collection, analysis, source, demo, and history contracts;
+- Groq key trimming, validation status mapping, structured-output validation, and response sanitization;
+- static collection safety, redirects, limits, JSON-LD priority, HTML fallback, and specific failure codes;
+- SQLite first-use schema creation, atomic save, newest-first summaries, round trips, and safe failures;
+- staged API routes, safe error envelopes, dashboard HTTP boundaries, accessible presentation helpers, and history navigation;
+- supervisor dotenv precedence, browser readiness/open behavior, child lifecycle, and cleanup; and
+- current-facing documentation/source audits for retired configuration or model-choice language.
+
+Run the full local checks with:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 .\.venv\Scripts\python.exe -m compileall -q backend dashboard tests run_app.py
 ```
 
-## Current limits
+## Final verification checklist
 
-- Collection covers one static HTML page and does not execute JavaScript or paginate.
-- The demonstration site is external and may change independently.
-- Provider credentials, permissions, quotas, availability, model access, and free-tier eligibility are controlled by Google or Groq.
-- Credential preflight confirms provider acceptance through the model-list endpoint; it does not guarantee that a later generative request will succeed.
-- Automated tests use fixtures and fakes; live provider and external-page behavior require separate operational checks.
+The release smoke test runs the supervised app with the existing local environment and installed Google Chrome. It verifies a live extraction, evidence display before analysis, Groq analysis, semantic result labels, history persistence and reload, explicit demo behavior, and representative safe errors. It records only key presence, never its value.
+
+## Known limitations
+
+- Static HTML collection cannot support pages that require client-side rendering, login, pagination, or access-control circumvention.
+- External page markup can change; only URLs verified with the completed collector are suitable for a live presentation.
+- Groq access, quotas, model availability, and later generative request success remain external service concerns even after pre-analysis validation succeeds.
+- SQLite history is intentionally local to this machine and has no multi-user synchronization or backup layer.
+- Automated tests use fixtures and fakes; live sources and real model calls require the separate local smoke check.

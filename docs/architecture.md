@@ -1,123 +1,110 @@
-# ReviewInsight Architecture
+# Review Intelligence Architecture
 
-## Runtime topology and ownership
+## Runtime topology
 
-```text
-run_app.py supervisor
-  +-- load PROJECT_ROOT/.env without overriding parent environment
-  +-- Uvicorn child: FastAPI 127.0.0.1:8000
-  +-- Streamlit child: dashboard 127.0.0.1:8501
-  +-- wait for Streamlit /_stcore/health
-  +-- open dashboard once in the OS default browser
-
-Browser
-  -> Streamlit form
-  -> GET FastAPI /health
-  -> POST FastAPI /api/analyze
-       1. validate_provider_credentials(provider)
-       2. collect_reviews(url)
-       3. analyze_reviews(reviews, provider)
-       4. calculate_metrics(reviews, sentiments)
-       5. validate and return AnalysisResponse
-```
-
-`run_app.py` owns local startup and process lifecycle. Before starting either child, it loads `PROJECT_ROOT/.env` without replacing values already present in the parent environment. Both children inherit the resulting environment. It builds argument-list commands around `sys.executable`, launches both children from the project root without a shell, polls them, and stays alive while both remain active. `Ctrl+C` triggers graceful termination and a bounded wait for both children. If a child exits or cannot start, the supervisor stops its peer and returns a nonzero status; a child that does not terminate within five seconds is killed and reaped.
-
-The supervisor probes Streamlit's local health endpoint with a short timeout. On the first successful response it requests one operating-system default-browser open for `http://127.0.0.1:8501`. A browser failure prints the manual URL and does not stop supervision. The supervisor does not install dependencies, change credential values, or suppress child output. FastAPI owns validation, collection, model interaction, calculations, response validation, and public error mapping. Streamlit owns form state, backend health checks, API calls, charts, and presentation. The applications share JSON contracts rather than importing backend services into the dashboard.
-
-## Analysis flow
-
-Credential preflight is deliberately the first service stage. A failure stops the request before any destination resolution, page request, review extraction, model construction, or generative invocation.
+The MVP keeps the existing two-process local architecture. `run_app.py` is the only supervisor: it loads the repository-root `.env` without replacing values already present in the parent environment, starts both services with the current Python interpreter, waits for Streamlit readiness, and opens the local dashboard once in the operating system's default browser.
 
 ```text
-POST /api/analyze
-  -> selected key exists and is nonblank?
-  -> provider model-list GET succeeds?
-  -> public destination validation
-  -> bounded static HTML collection
-  -> JSON-LD reviews, then recognized static review cards
-  -> normalize, deduplicate, require two, cap at 40
-  -> one structured LangChain agent invocation
-  -> exact review-sentiment ID validation
-  -> deterministic Python metrics
-  -> validated JSON response
+run_app.py
+  ├── Uvicorn / FastAPI       127.0.0.1:8000
+  └── Streamlit dashboard     127.0.0.1:8501
+
+Google Chrome or another local browser
+  └── Streamlit HTTP client
+        └── FastAPI JSON API
+              ├── static collector
+              ├── Groq analysis boundary
+              └── SQLite history store
 ```
 
-Model construction repeats the selected-key presence check as defense in depth for direct callers, but orchestration preflight is the authoritative gate.
+The supervisor launches both children from the project root without a shell. It stops a surviving peer when either child exits, cleans up both on `Ctrl+C`, and forces shutdown only after the bounded graceful timeout. A browser-open failure is nonfatal and prints the manual dashboard URL.
 
-## Credential boundary
+## Staged data flow
 
-| Provider | Variable | Request | Header |
-|---|---|---|---|
-| Gemini | `GOOGLE_API_KEY` | `GET https://generativelanguage.googleapis.com/v1beta/models` | `x-goog-api-key: <key>` |
-| Groq | `GROQ_API_KEY` | `GET https://api.groq.com/openai/v1/models` | `Authorization: Bearer <key>` |
+The dashboard never imports backend services directly. Streamlit and FastAPI share validated JSON contracts over local HTTP.
 
-These model-list requests are non-generative. Only the selected provider's environment variable is read. Requests separate a three-second connection timeout from a five-second read timeout.
+```text
+1. User submits a public URL
+   Streamlit -> POST /api/collect -> static collector
+   Streamlit <- CollectionResult (source + normalized reviews)
 
-Validation decisions use only the HTTP status: `2xx` succeeds; `400`, `401`, and `403` map to `invalid_api_key`; other non-success statuses map to `provider_unavailable`. Missing selected credentials map to `missing_api_key` without an HTTP request. Request exceptions also map to `provider_unavailable`.
+2. User inspects the evidence
+   Streamlit renders extractor, ratings, dates, and review text
 
-Provider bodies are not inspected or used in decisions. Key values, headers, bodies, endpoint diagnostics, transport exceptions, stack traces, and chained provider errors do not cross the FastAPI boundary.
+3. User explicitly starts analysis
+   Streamlit -> POST /api/analyze (the exact displayed collection)
+   FastAPI -> validate GROQ_API_KEY
+   FastAPI -> one structured Groq analysis
+   FastAPI -> deterministic metrics -> SQLite save
+   Streamlit <- AnalysisResponse with history_id
+
+4. User navigates saved reports
+   Streamlit -> GET /api/history or GET /api/history/{run_id}
+```
+
+`GET /api/demo` is a separate, deliberate path that loads the bundled local collection. It does not run after a live collection error, and its `is_demo` metadata keeps `🧪 DEMO DATA` visible throughout the dashboard.
+
+## Groq boundary
+
+`GROQ_API_KEY` is the sole AI credential. The key comes from the inherited environment or repository-root `.env`; values already present in the shell or system environment take precedence because dotenv loading uses `override=False`. The Streamlit UI has no key entry field.
+
+Before analysis, FastAPI calls Groq's non-generative model-list endpoint with a bearer authorization header. A blank key maps to `missing_api_key`; rejected credentials map to `invalid_api_key`; transport, rate-limit, or other validation failures map to `groq_unavailable`. No collection or model invocation starts after validation fails.
+
+`backend.app.analyzer.build_model()` uses `langchain_groq.ChatGroq` only. The default model is `llama-3.3-70b-versatile`; `REVIEWINSIGHT_GROQ_MODEL` is an optional local override. The agent is invoked once with normalized review ID, text, rating, and date values and must return a schema-validated response with one sentiment for every review ID.
+
+Only application-owned codes and messages cross FastAPI's public boundary. Credential values, authorization headers, raw model output, upstream response bodies, exception text, and stack traces are not returned to Streamlit.
 
 ## Collection boundary
 
-The collector accepts only public `http` and `https` destinations. It rejects embedded credentials and any resolved address that is not globally routable. Redirects are disabled in the HTTP client, followed manually at most three times, and every target is revalidated before a request is sent.
+The collector accepts public `http` and `https` URLs without embedded credentials. It validates the initial destination and every manually followed redirect, permits at most three redirects, uses bounded request timeouts, reads no more than 1 MiB of HTML, and caps normalized output at 40 reviews.
 
-Responses use explicit connection/read timeouts, a descriptive user agent, HTML content-type enforcement, streaming reads, and a 1 MiB ceiling. JSON-LD review bodies are attempted first. Static markup extraction requires both a semantic review container and a review-body element; arbitrary paragraphs are never promoted to reviews. Exact case-insensitive duplicates are removed, IDs are assigned sequentially, at least two reviews are required, and at most 40 reviews are returned.
+Extraction is intentionally static:
 
-## Analysis and metrics boundary
+1. Schema.org-style JSON-LD is inspected first.
+2. Conservative review-card and review-body markup is considered only when JSON-LD does not yield usable reviews.
+3. Review text is normalized and deduplicated. At least two unique reviews are required.
 
-`analyze_reviews` constructs the selected Gemini or Groq chat model and one `langchain.agents.create_agent` with `tools=[]` and `response_format=AgentInsights`. The agent is invoked once with compact records containing only ID, text, rating, and date. Returned review-sentiment IDs must cover every submitted review exactly once.
+The collector does not execute JavaScript, log in, paginate, automate a browser, or bypass access controls. Stable error codes distinguish invalid URLs, blocked sites, timeouts, malformed review-like JSON-LD, missing reviews, and generic safe collection failures.
 
-Counts, rated counts, average rating, positive percentage, sentiment counts, and the one-through-five rating distribution are calculated in Python from collected reviews and validated review-level sentiments.
+## Report and presentation boundary
 
-## Endpoint contracts
+Metrics are calculated in Python from validated review-level sentiments and ratings. The dashboard renders the extracted review evidence before analysis and uses text-plus-icon treatments so color is not the only cue:
 
-### `GET /health`
+- `✅ Positive` is styled in green for strengths and favorable themes.
+- `⚠️ Negative` is styled in red for complaints and unfavorable themes.
+- `➖ Neutral` uses amber, and `↔ Mixed` uses a distinct indigo treatment.
 
-Returns without credential validation, collection, or model access:
+Untrusted source titles, themes, and review text are escaped before being included in styled markup. The dashboard uses Streamlit containers, metric cards, tables, charts, and sidebar controls without storing or displaying any credential.
 
-```json
-{"status":"ok"}
-```
+## Local history
 
-### `POST /api/analyze`
+FastAPI owns history through the standard-library `sqlite3` implementation in `backend.app.history.HistoryStore`. Its default path is `data/review_history.db`.
 
-Request:
+Each successful report is serialized as validated JSON and saved atomically with a compact summary row: timestamp, source metadata, demo flag, review count, and overall sentiment. The history list returns newest-first summaries; a single report can be retrieved by its integer ID. Database, filesystem, and malformed-record errors become the safe `history_failed` code. The `data/` directory is ignored by Git, so saved reports remain local.
 
-```json
-{"url":"https://web-scraping.dev/product/1","provider":"google"}
-```
+## Endpoint contract
 
-The validated response contains source metadata, deterministic metrics, structured insights, and normalized reviews. Supported provider values are `google` and `groq`.
+| Method and path | Input | Output | Side effects |
+|---|---|---|---|
+| `GET /health` | none | `{"status":"ok"}` | none |
+| `POST /api/collect` | public URL | `CollectionResult` | static HTTP only |
+| `GET /api/demo` | none | labeled demo `CollectionResult` | reads bundled JSON only |
+| `POST /api/analyze` | validated source and 2–40 reviews | `AnalysisResponse` | Groq validation, one analysis, SQLite save |
+| `GET /api/history` | none | history summary list | SQLite read |
+| `GET /api/history/{run_id}` | integer ID | saved report or 404 | SQLite read |
 
-| Public code | Status |
-|---|---:|
-| `invalid_url`, `no_reviews` | 422 |
-| `collection_failed` | 502 |
-| `missing_api_key` | 400 |
-| `invalid_api_key` | 401 |
-| `provider_unavailable` | 503 |
-| `analysis_failed` | 502 |
+## Ownership
 
-FastAPI request-schema failures also use `422`. Unknown exceptions are reduced to the generic `analysis_failed` message with status `500`.
+- `run_app.py` — project environment loading, process supervision, readiness polling, and browser-open attempt.
+- `backend/app/collector.py` — URL safety, bounded static retrieval, JSON-LD-first extraction, fallback markup, and normalization.
+- `backend/app/credentials.py` — Groq key lookup and safe pre-analysis validation.
+- `backend/app/analyzer.py` — one structured Groq invocation and result validation.
+- `backend/app/service.py` — ordered validation, analysis, and deterministic metrics.
+- `backend/app/history.py` — local SQLite persistence and retrieval.
+- `backend/app/main.py` — endpoint composition and safe error mapping.
+- `dashboard/api_client.py` — stage-specific HTTP timeouts and safe response decoding.
+- `dashboard/streamlit_app.py` — staged user flow, accessible visual report, explicit demo control, and history navigation.
 
-## File ownership
+## Intentional limits
 
-- `run_app.py`: project environment loading, dashboard readiness and browser opening, peer process commands, supervision, shutdown escalation, and exit semantics.
-- `backend/app/errors.py`: stable application-owned analysis error.
-- `backend/app/credentials.py`: provider configuration and safe non-generative preflight.
-- `backend/app/collector.py`: destination safety, bounded retrieval, extraction, normalization, deduplication, and limits.
-- `backend/app/analyzer.py`: provider factory, evidence-based prompt, one agent invocation, and sentiment-ID validation.
-- `backend/app/service.py`: ordered orchestration and deterministic metrics.
-- `backend/app/models.py`: shared request, response, insight, metric, and public-error schemas.
-- `backend/app/main.py`: FastAPI construction and HTTP error mapping.
-- `dashboard/api_client.py`: backend health and analysis HTTP boundaries.
-- `dashboard/streamlit_app.py`: dashboard state, safe error rendering, and report presentation.
-- `tests/`: fixture-based and fake-backed boundary, behavior, lifecycle, and documentation checks.
-
-## Explicit non-goals and limits
-
-- JavaScript rendering, browser control, anti-bot bypasses, pagination, authenticated pages, and universal source compatibility.
-- Persistent reports, user accounts, authentication, queues, workers, and background processing.
-- Dependency installation, credential mutation, or output suppression by the supervisor.
-- Custom model retries, batching, memory, checkpointers, heuristic model substitutes, or tracing services.
+This is a single-machine MVP. It has no browser automation, JavaScript rendering, anti-bot circumvention, login support, authentication, cloud deployment, Docker, workers, queues, background jobs, or universal website compatibility. It also does not treat the bundled demo set as a replacement for a failed live URL.

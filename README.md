@@ -1,38 +1,37 @@
-# ReviewInsight
+# Review Intelligence
 
-ReviewInsight turns reviews from one public, static HTML page into a structured product readout. A supervised local application runs a FastAPI backend and Streamlit dashboard together. The backend validates the selected AI-provider credential, collects bounded review evidence, makes one structured Gemini or Groq call, and calculates reproducible metrics in Python.
+Review Intelligence is a local, presentation-ready MVP for turning a public product or review-page URL into an evidence-backed review report. It keeps the user in control of the flow: extract reviews first, inspect the evidence, then request Groq analysis.
+
+The application runs a FastAPI backend and a Streamlit dashboard under one local supervisor. It is Groq-only: there is no model-choice control in the interface and no credential field in the dashboard.
+
+## What the MVP does
+
+1. Accepts one public `http` or `https` review-page URL.
+2. Collects review-like content from JSON-LD first, then conservative static HTML review cards.
+3. Shows the normalized reviews and source metadata before any AI request.
+4. Validates Groq access, analyzes the displayed evidence, and calculates metrics locally.
+5. Presents labeled positive, negative, neutral, and mixed findings with accessible colors and icons.
+6. Saves successful reports in local SQLite history for later loading.
+
+Bundled demo data is available only through the explicit **Use bundled demo data** action. A failed live collection never substitutes demo reviews.
 
 ## Architecture
 
 ```text
-.\run_app.py supervisor
-  +-- FastAPI http://127.0.0.1:8000
-  |     POST /api/analyze
-  |       -> validate selected provider credential
-  |       -> collect reviews from one public page
-  |       -> run one structured AI analysis
-  |       -> calculate deterministic metrics
-  |       -> return a validated report
-  +-- Streamlit http://127.0.0.1:8501
-        -> health check and JSON API calls to FastAPI
-        -> metrics, charts, themes, actions, and review evidence
+run_app.py supervisor
+  +-- FastAPI:   http://127.0.0.1:8000
+  |     POST /api/collect   -> static collection only
+  |     GET  /api/demo      -> explicit bundled sample only
+  |     POST /api/analyze   -> Groq validation + analysis + SQLite save
+  |     GET  /api/history   -> local saved-run summaries
+  |
+  +-- Streamlit: http://127.0.0.1:8501
+        -> staged evidence, analysis, results, and history UI
 ```
 
-The dashboard and backend communicate only through HTTP JSON contracts. The root supervisor owns both child processes: it starts them with the current Python interpreter, keeps running while both are active, stops the survivor if either child exits, and cleans up both on `Ctrl+C`.
+The detailed boundary and data-flow description is in [docs/architecture.md](docs/architecture.md).
 
-## Supported review sources and limits
-
-- The input must be a public `http` or `https` URL without embedded credentials.
-- Collection uses static HTTP only; client-rendered JavaScript is not executed.
-- Schema.org/JSON-LD reviews are preferred. Recognized static review-card markup is used when structured reviews are absent.
-- One page, at most three redirects, a 1 MiB HTML response, and at most 40 unique reviews are processed.
-- Every redirect destination is revalidated as a globally routable address.
-- At least two unique reviews are required.
-- Pagination, authenticated pages, browser automation, anti-bot bypasses, persistent reports, user accounts, and background jobs are outside this MVP.
-
-The sample page is `https://web-scraping.dev/product/1`. External markup can change; automated collection tests use `tests/fixtures/review_page.html`.
-
-## Installation and configuration
+## Install and configure on Windows
 
 Python 3.12 or newer is recommended. From the repository root:
 
@@ -41,100 +40,57 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Create a `.env` file in the repository root and set the credential for each
-provider you intend to select:
+The only AI credential is `GROQ_API_KEY`. It is read from the existing process or system environment, or from a repository-root `.env` file. The dashboard never requests or displays it.
 
 ```dotenv
-GOOGLE_API_KEY=your-gemini-key
-GROQ_API_KEY=your-groq-key
+# .env — keep this file local and never commit a real value
+GROQ_API_KEY=replace-with-your-local-secret
 ```
 
-`.env.example` lists every active setting without secrets. Only the selected
-provider's credential is read and validated, so the unselected provider's
-variable may be absent. Values already set in the shell or system environment
-take precedence over matching `.env` entries. You can therefore use PowerShell
-instead of `.env` when preferred:
+`run_app.py` loads `.env` with `override=False`, so values already present in the shell or system environment take precedence. `.env.example` lists the active non-secret settings:
 
-```powershell
-$env:GROQ_API_KEY = "your-groq-key"
+```dotenv
+REVIEWINSIGHT_API_URL=http://127.0.0.1:8000
+GROQ_API_KEY=
+REVIEWINSIGHT_GROQ_MODEL=llama-3.3-70b-versatile
 ```
 
-Default model and backend URL settings are:
+`REVIEWINSIGHT_GROQ_MODEL` is optional; when it is unset, the application uses the existing Llama Versatile default, `llama-3.3-70b-versatile`. Do not put credentials in source code, screenshots, browser fields, or logs.
 
-```powershell
-$env:REVIEWINSIGHT_GOOGLE_MODEL = "gemini-2.5-flash-lite"
-$env:REVIEWINSIGHT_GROQ_MODEL = "llama-3.3-70b-versatile"
-$env:REVIEWINSIGHT_API_URL = "http://127.0.0.1:8000"
-```
-
-The model and API URL variables are optional overrides. Provider access, quotas, and model availability remain controlled by the provider account. Never commit keys or include them in logs.
-
-## Start the complete application
-
-With the virtual environment installed and the selected provider credential set, run exactly:
+## Run the complete application
 
 ```powershell
 .\.venv\Scripts\python.exe run_app.py
 ```
 
-FastAPI listens on `127.0.0.1:8000`. After Streamlit becomes ready, the
-launcher automatically opens `http://127.0.0.1:8501` in the operating system's
-default browser. If no browser can be opened, use the printed URL manually.
-Press `Ctrl+C` in the supervising terminal to stop both services.
+The supervisor starts FastAPI on `127.0.0.1:8000` and Streamlit on `127.0.0.1:8501`. After Streamlit is ready, it automatically opens `http://127.0.0.1:8501` in the operating system's default browser. If that open attempt fails, use the printed URL manually. Press `Ctrl+C` in the supervising terminal to stop both services.
 
-## Credential preflight
+## Dashboard flow
 
-Credential validation is the first analysis stage, before page collection and before any generative model invocation.
+1. Paste a public product or review-page URL and select **Extract reviews**.
+2. Review the displayed source, extractor label, ratings, dates, and written evidence. Extraction does not call Groq.
+3. Select **Analyze with Groq** only when the evidence is ready. The backend validates `GROQ_API_KEY` before model work.
+4. Read the labeled result cards: `✅ Positive` strengths, `⚠️ Negative` complaints, `➖ Neutral` findings, and `↔ Mixed` overall results where appropriate.
+5. Use the sidebar to refresh local history and load a saved report.
 
-| Selection | Required variable | Non-generative request | Authentication |
-|---|---|---|---|
-| Gemini (`google`) | `GOOGLE_API_KEY` | `GET https://generativelanguage.googleapis.com/v1beta/models` | `x-goog-api-key` header |
-| Groq (`groq`) | `GROQ_API_KEY` | `GET https://api.groq.com/openai/v1/models` | `Authorization: Bearer` header |
+For a repeatable presentation without network dependence, select **Use bundled demo data**, inspect the ten clearly labeled fictional reviews, then select **Analyze with Groq**. The `🧪 DEMO DATA` label remains visible in the source and report views.
 
-Both requests list accessible models; neither produces model output. The request uses a 3-second connection timeout and a 5-second read timeout. A `2xx` response passes preflight. A blank selected key fails before any provider request; `400`, `401`, or `403` means the credential was rejected; every other non-success status or transport failure means validation could not be completed.
+## API boundaries
 
-Only stable application-owned codes and messages cross the API boundary. Credential values, authorization headers, provider response bodies, transport details, internal exceptions, and stack traces are never returned to the dashboard.
+| Endpoint | Purpose | Calls Groq? |
+|---|---|---:|
+| `GET /health` | Process-readiness check. | No |
+| `POST /api/collect` | Accepts `{"url": "https://..."}` and returns normalized live evidence. | No |
+| `GET /api/demo` | Returns the bundled, explicitly labeled demo collection. | No |
+| `POST /api/analyze` | Accepts a previously collected `source` and `reviews`; validates Groq, analyzes, and saves the report. | Yes |
+| `GET /api/history` | Returns newest-first local history summaries. | No |
+| `GET /api/history/{run_id}` | Returns one saved local report. | No |
 
-## Project structure
+Successful reports are stored by FastAPI in `data/review_history.db`. The generated `data/` directory is local and ignored by Git; deleting that database clears saved history without changing bundled demo data.
 
-- `run_app.py` — loads project settings, starts and supervises both services, and opens the ready dashboard.
-- `backend/app/errors.py` — shared safe application error type.
-- `backend/app/credentials.py` — selected-provider credential lookup and non-generative validation.
-- `backend/app/collector.py` — public-destination checks, bounded static retrieval, extraction, normalization, and limits.
-- `backend/app/analyzer.py` — provider model construction and one structured LangChain agent invocation.
-- `backend/app/service.py` — credential preflight, collection, analysis, and metric orchestration.
-- `backend/app/models.py` — validated request, review, insight, metric, response, and public-error contracts.
-- `backend/app/main.py` — FastAPI routes and safe HTTP error mapping.
-- `dashboard/api_client.py` — health and analysis HTTP client boundary with safe error decoding.
-- `dashboard/streamlit_app.py` — input form and staged report presentation.
-- `tests/fixtures/review_page.html` — deterministic static collection fixture.
-- `tests/test_credentials.py` — provider endpoint, authentication, timeout, and safe-status tests.
-- `tests/test_run_app.py` — environment, readiness, browser, process, and cleanup tests.
-- `tests/test_documentation.py` — startup-documentation and retained Python docstring coverage.
-- `tests/test_collector_mvp.py` — collection safety, extraction, deduplication, and limit tests.
-- `tests/test_analyzer_mvp.py` — model construction, single invocation, schema, and sanitization tests.
-- `tests/test_service_mvp.py` — stage ordering and deterministic metric tests.
-- `tests/test_api_mvp.py` — route, response, status, and safe-envelope tests.
-- `tests/test_dashboard_mvp.py` — client boundary and report-formatting tests.
-- `tests/__init__.py` — test package marker and package documentation.
-- `requirements.txt` — bounded runtime and test dependencies.
-- `.env.example` — active environment-variable names and default values without secrets.
-- `README.md` — installation, operation, contracts, testing, and troubleshooting.
-- `docs/architecture.md` — detailed runtime ownership and data boundaries.
-- `docs/project_status.md` — current implementation and verification inventory.
-- `docs/superpowers/specs/2026-07-13-single-command-credential-preflight-design.md` — approved current design.
-- `docs/superpowers/plans/2026-07-13-single-command-credential-preflight.md` — current implementation plan.
+## Safe errors
 
-## API example and errors
-
-After starting the application and setting the credential for the selected provider:
-
-```powershell
-$body = @{ url = "https://web-scraping.dev/product/1"; provider = "google" } | ConvertTo-Json
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/analyze -ContentType application/json -Body $body
-```
-
-Application failures use this envelope:
+The backend returns short application-owned error envelopes such as:
 
 ```json
 {"detail":{"code":"no_reviews","message":"At least two public reviews are required."}}
@@ -142,45 +98,37 @@ Application failures use this envelope:
 
 | Code | HTTP status | Meaning |
 |---|---:|---|
-| `invalid_url` | 422 | The destination is malformed, unsupported, credential-bearing, or not public. |
-| `no_reviews` | 422 | Fewer than two usable unique reviews were found. |
-| `collection_failed` | 502 | The public page could not be collected safely. |
-| `missing_api_key` | 400 | The selected provider variable is blank or absent. |
-| `invalid_api_key` | 401 | The selected provider rejected the key or its permissions. |
-| `provider_unavailable` | 503 | Credential validation could not complete because of provider or transport availability. |
-| `analysis_failed` | 502 | A known model-analysis failure occurred. |
+| `invalid_url` | 422 | Use a public `http` or `https` URL without embedded credentials. |
+| `no_reviews` | 422 | Fewer than two usable reviews were found. |
+| `malformed_json_ld` | 422 | Review-like structured data was malformed and no safe fallback succeeded. |
+| `site_blocked` | 502 | The target rejected automated static access. |
+| `collection_timeout` | 504 | The target did not respond within the collection limit. |
+| `collection_failed` | 502 | The page could not be safely read as HTML. |
+| `missing_api_key` | 400 | `GROQ_API_KEY` is absent or blank. |
+| `invalid_api_key` | 401 | Groq rejected the configured credential. |
+| `groq_unavailable` | 503 | Groq credential validation could not complete. |
+| `analysis_failed` | 502 | The analysis request could not complete. |
+| `model_output_invalid` | 502 | The returned structured analysis did not satisfy the expected schema. |
+| `history_failed` | 500 | Local SQLite history could not be updated or read. |
+| `history_not_found` | 404 | The requested saved run is not present. |
 
-Malformed request schemas also receive FastAPI's standard `422` response. An unexpected internal failure is reduced to a generic `analysis_failed` message with HTTP `500`.
+Credentials, authorization headers, raw AI responses, upstream response bodies, exception internals, and tracebacks never cross the API boundary.
 
-## Tests
+## Collection limits
 
-Tests use fixtures and fakes; they do not call live review pages or AI providers.
+- Static HTTP only; no JavaScript execution, browser automation, login, or anti-bot bypass.
+- JSON-LD review extraction has priority; static HTML cards are a conservative fallback.
+- One page, up to three manually validated redirects, a 1 MiB response cap, and up to 40 normalized reviews.
+- Public destinations are checked before every request and redirect; at least two unique reviews are required.
+- Pagination, authenticated pages, universal website support, queues, cloud deployment, and accounts are intentionally outside this MVP.
+
+## Test and validate
+
+Automated tests use fixtures and fakes, so they do not spend Groq quota or depend on external review pages:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 .\.venv\Scripts\python.exe -m compileall -q backend dashboard tests run_app.py
 ```
 
-The first command runs credential, collector, analyzer, service, API, dashboard, supervisor, and Python-documentation coverage. The second compiles every retained Python source.
-
-## Troubleshooting
-
-### Missing or invalid credential
-
-Set the variable for the provider selected in the dashboard in the repository-root `.env` or the shell/system environment. Shell and system values take precedence. A missing key returns `missing_api_key`; a key rejected with provider status `400`, `401`, or `403` returns `invalid_api_key`. Check that the key has no surrounding whitespace and has permission to access the provider's models endpoint.
-
-### Provider cannot be validated
-
-`provider_unavailable` covers timeouts, connection failures, rate limits, server errors, and other non-success responses. No page collection or AI analysis has started. Check network access and provider status, then retry.
-
-### Port 8000 or 8501 is occupied
-
-Stop the process already listening on the occupied port, then rerun the startup command. The ports are fixed by `run_app.py`; `REVIEWINSIGHT_API_URL` changes only where the dashboard sends backend requests.
-
-### A child process exits
-
-The supervisor stops the remaining service and exits nonzero when Uvicorn or Streamlit fails or exits unexpectedly. Read the child output in the supervising terminal, correct the first reported dependency, configuration, or port error, and rerun the same startup command. If graceful shutdown exceeds five seconds, the supervisor forces that child to stop.
-
-### The dashboard reports that FastAPI is unreachable
-
-Confirm that `run_app.py` is still running and that `Invoke-RestMethod http://127.0.0.1:8000/health` returns `status: ok`. If the supervisor already exited, use its terminal output to diagnose the child that failed and restart the complete application.
+For the final local smoke test, run the supervisor, open the app in installed Google Chrome, then exercise a live extraction and the explicit bundled demo flow. See [docs/project_status.md](docs/project_status.md) for the current verification record and known limitations.
