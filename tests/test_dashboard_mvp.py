@@ -396,6 +396,16 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertEqual(after[0]["Sentiment semantic"], "negative")
         self.assertEqual(after[1]["Sentiment"], "✅ Positive")
 
+    def test_review_rows_label_html_card_fallback_provenance(self):
+        """Name the collector's HTML-card extractor clearly in visible evidence."""
+
+        collection = {
+            "source": {"extractor": "html_cards"},
+            "reviews": [{"id": "review-1", "text": "A complete written review."}],
+        }
+
+        self.assertEqual(review_rows(collection)[0]["Extractor"], "HTML fallback")
+
     def test_safe_badge_markup_escapes_untrusted_labels(self):
         """Escape customer/model text before it is interpolated into styled HTML."""
 

@@ -119,7 +119,7 @@ def sentiment_visual(sentiment: str) -> SentimentVisual:
 def _extractor_label(extractor: Any) -> str:
     """Turn known extractor identifiers into reader-friendly provenance text."""
 
-    labels = {"json_ld": "JSON-LD", "html_fallback": "HTML fallback", "demo": "Demo data"}
+    labels = {"json_ld": "JSON-LD", "html_cards": "HTML fallback", "demo": "Demo data"}
     return labels.get(str(extractor), "Unknown extractor")
 
 
