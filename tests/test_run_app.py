@@ -334,6 +334,46 @@ class RunAppTests(unittest.TestCase):
             ["The application did not become ready within 30 seconds."],
         )
 
+    def test_ready_application_continues_past_startup_timeout(self):
+        """Keep supervising healthy peers after the startup deadline passes."""
+
+        fake_popen = FakePopen([FakeProcess(), FakeProcess()])
+        messages = []
+        opened = []
+        sleep_calls = 0
+        clock_calls = 0
+
+        def sleep(_):
+            """End sustained healthy supervision with an explicit Ctrl+C."""
+
+            nonlocal sleep_calls
+            sleep_calls += 1
+            raise KeyboardInterrupt
+
+        def monotonic():
+            """Advance the startup clock beyond the readiness deadline."""
+
+            nonlocal clock_calls
+            clock_calls += 1
+            return [0.0, STARTUP_TIMEOUT_SECONDS + 1.0][clock_calls - 1]
+
+        result = run(
+            popen=fake_popen,
+            sleep=sleep,
+            load_environment=lambda: None,
+            backend_ready=lambda: True,
+            dashboard_ready=lambda: True,
+            monotonic=monotonic,
+            open_browser=lambda url: opened.append(url) or True,
+            report=messages.append,
+        )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(clock_calls, 2)
+        self.assertEqual(sleep_calls, 1)
+        self.assertEqual(opened, [DASHBOARD_URL])
+        self.assertEqual(messages, [])
+
     def test_browser_failure_reports_manual_url_and_keeps_supervising(self):
         """Report a manual URL while preserving supervision on a false result."""
 

@@ -130,6 +130,7 @@ def run(
         backend = popen(backend_command, cwd=PROJECT_ROOT)
         dashboard = popen(dashboard_command, cwd=PROJECT_ROOT)
         startup_started = monotonic()
+        application_ready = False
         browser_attempted = False
         # Either peer is required for the app, so an early exit ends supervision
         # and the finally block shuts down its surviving counterpart.
@@ -139,6 +140,7 @@ def run(
                 if returncode is not None:
                     return returncode or 1
             if not browser_attempted and backend_ready() and dashboard_ready():
+                application_ready = True
                 browser_attempted = True
                 try:
                     browser_opened = open_browser(DASHBOARD_URL)
@@ -149,7 +151,8 @@ def run(
                         f"Open {DASHBOARD_URL} manually; "
                         "the default browser could not be started."
                     )
-            if monotonic() - startup_started >= STARTUP_TIMEOUT_SECONDS:
+            startup_elapsed = monotonic() - startup_started
+            if not application_ready and startup_elapsed >= STARTUP_TIMEOUT_SECONDS:
                 report("The application did not become ready within 30 seconds.")
                 return 1
             sleep(POLL_INTERVAL_SECONDS)
