@@ -56,6 +56,19 @@ class StagedContractTests(unittest.TestCase):
             AnalysisRequest.model_validate(
                 {"source": live_source().model_dump(mode="json"), "reviews": [request_reviews()[0].model_dump()]}
             )
+        with self.assertRaises(ValidationError):
+            AnalysisRequest.model_validate(
+                {
+                    "source": live_source().model_dump(mode="json"),
+                    "reviews": [
+                        {
+                            "id": f"r{index}",
+                            "text": f"Detailed review number {index} with sufficient useful product evidence.",
+                        }
+                        for index in range(41)
+                    ],
+                }
+            )
 
     def test_collection_request_forbids_unknown_fields(self):
         """Keep collection inputs limited to exactly one public URL."""

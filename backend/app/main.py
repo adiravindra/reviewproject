@@ -5,7 +5,6 @@ from fastapi import FastAPI, HTTPException
 from backend.app.collector import CollectionError
 from backend.app.errors import AnalysisError
 from backend.app.models import AnalysisRequest, AnalysisResponse
-from backend.app.service import run_analysis
 
 
 # Stable status mappings let clients distinguish user-correctable credentials,
@@ -18,7 +17,15 @@ ANALYSIS_STATUS_CODES = {
 }
 
 
-def create_app(analysis_service=run_analysis) -> FastAPI:
+def _run_analysis_service(collection):
+    """Import the transitioning service lazily after staged request validation."""
+
+    from backend.app.service import run_analysis
+
+    return run_analysis(collection)
+
+
+def create_app(analysis_service=_run_analysis_service) -> FastAPI:
     """Build the API with an injectable service for boundary-focused tests."""
 
     app = FastAPI(title="ReviewInsight MVP")
@@ -34,7 +41,7 @@ def create_app(analysis_service=run_analysis) -> FastAPI:
         """Translate validated requests and safe domain failures into HTTP results."""
 
         try:
-            return analysis_service(str(request.url), request.provider)
+            return analysis_service(request.to_collection())
         except CollectionError as exc:
             status = 422 if exc.code in {"invalid_url", "no_reviews"} else 502
             raise HTTPException(
