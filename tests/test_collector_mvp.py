@@ -159,6 +159,28 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(result.source.extractor, "html_cards")
         self.assertEqual([review.text for review in result.reviews], ["First full review body.", "Second full review body."])
 
+    def test_html_cards_replace_insufficient_json_ld_without_merging_evidence(self):
+        """Prefer a sufficient static fallback over one usable JSON-LD review."""
+
+        structured_only = "A lone structured review must not be merged with card evidence."
+        html_cards = ["First complete static card review.", "Second complete static card review."]
+        html = (
+            '<script type="application/ld+json">'
+            f'{{"reviewBody":"{structured_only}","reviewRating":{{"ratingValue":"5"}}}}'
+            "</script>"
+            + cards(html_cards)
+        )
+
+        result = collect_reviews(
+            "https://example.com/reviews",
+            session=TextSession(html),
+            resolver=public_resolver,
+        )
+
+        self.assertEqual(result.source.extractor, "html_cards")
+        self.assertEqual([review.text for review in result.reviews], html_cards)
+        self.assertNotIn(structured_only, [review.text for review in result.reviews])
+
     def test_fallback_does_not_promote_arbitrary_paragraphs(self):
         """Reject ordinary page prose as insufficient review evidence."""
 

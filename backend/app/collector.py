@@ -76,15 +76,22 @@ def collect_reviews(
             raise CollectionError("collection_failed", COLLECTION_MESSAGE)
 
         # Structured review semantics are stronger evidence than CSS naming, so
-        # HTML cards are used only when JSON-LD yields no review candidates.
-        title, candidates, malformed_review_json_ld = _extract_json_ld(html)
+        # cards are considered only when JSON-LD yields fewer than two usable reviews.
+        title, json_ld_candidates, malformed_review_json_ld = _extract_json_ld(html)
         extractor = "json_ld"
-        if not candidates:
-            title, candidates = _extract_html_cards(html)
-            extractor = "html_cards"
-        reviews = _normalize(candidates, limit=40)
+        reviews = _normalize(json_ld_candidates, limit=40)
+        # Structured data remains the preferred evidence. A partial or unusable
+        # structured result must not suppress a sufficient independent card set,
+        # but the two sources are deliberately never mixed.
         if len(reviews) < 2:
-            if malformed_review_json_ld and extractor == "html_cards":
+            html_title, html_candidates = _extract_html_cards(html)
+            html_reviews = _normalize(html_candidates, limit=40)
+            if len(html_reviews) >= 2:
+                title = html_title
+                extractor = "html_cards"
+                reviews = html_reviews
+        if len(reviews) < 2:
+            if malformed_review_json_ld:
                 raise CollectionError("malformed_json_ld", MALFORMED_JSON_LD_MESSAGE)
             raise CollectionError("no_reviews", "At least two public reviews are required.")
         return CollectionResult(
