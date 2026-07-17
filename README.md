@@ -20,12 +20,14 @@ Bundled demo data is available only through the explicit **Use bundled demo data
 ```text
 run_app.py supervisor
   +-- FastAPI:   http://127.0.0.1:8000
+  |     GET  /health        -> readiness only when body is exactly {"status":"ok"}
   |     POST /api/collect   -> static collection only
   |     GET  /api/demo      -> explicit bundled sample only
   |     POST /api/analyze   -> Groq validation + analysis + SQLite save
   |     GET  /api/history   -> local saved-run summaries
   |
   +-- Streamlit: http://127.0.0.1:8501
+        GET /_stcore/health -> dashboard readiness
         -> staged evidence, analysis, results, and history UI
 ```
 
@@ -63,17 +65,22 @@ REVIEWINSIGHT_GROQ_MODEL=llama-3.3-70b-versatile
 .\.venv\Scripts\python.exe run_app.py
 ```
 
-The supervisor starts FastAPI on `127.0.0.1:8000` and Streamlit on `127.0.0.1:8501`. After Streamlit is ready, it automatically opens `http://127.0.0.1:8501` in the operating system's default browser. If that open attempt fails, use the printed URL manually. Press `Ctrl+C` in the supervising terminal to stop both services.
+The supervisor starts FastAPI on `127.0.0.1:8000` and Streamlit on `127.0.0.1:8501`, then polls both readiness endpoints under one 30-second startup deadline. FastAPI is ready only when `GET /health` returns HTTP 200 with exactly `{"status":"ok"}`; Streamlit is ready when `GET /_stcore/health` returns HTTP 200. The supervisor automatically opens `http://127.0.0.1:8501` in the operating system's default browser only after both checks succeed.
+
+If the complete application does not become ready within 30 seconds, startup returns a failure and both child processes are stopped. An unexpected child exit also fails the run and stops its peer. If only the browser-open attempt fails, the services continue and the supervisor prints the URL for manual use. Press `Ctrl+C` in the supervising terminal for a clean shutdown of both services.
 
 ## Dashboard flow
 
-1. Paste a public product or review-page URL and select **Extract reviews**.
-2. Review the displayed source, extractor label, ratings, dates, and written evidence. Extraction does not call Groq.
-3. Select **Analyze with Groq** only when the evidence is ready. The backend validates `GROQ_API_KEY` before model work.
-4. Read the labeled result cards: `✅ Positive` strengths, `⚠️ Negative` complaints, `➖ Neutral` findings, and `↔ Mixed` overall results where appropriate.
-5. Use the sidebar to refresh local history and load a saved report.
+1. Use the bordered extraction workspace to paste a public product or review-page URL and select **Extract reviews**. The adjacent **Use bundled demo data** action is always explicit.
+2. Follow the three-step **How it works** strip: extract, review evidence, then analyze.
+3. Inspect the grouped source summary, extractor label, ratings, dates, and written evidence before analysis. Extraction does not call Groq, and the pre-analysis evidence remains visible.
+4. Select **Analyze with Groq** only when the evidence is ready. The backend validates `GROQ_API_KEY` before model work.
+5. Scan the report in order: source and overall sentiment, four metric cards, executive summary, sentiment and rating charts, recurring themes, strengths, concerns, and recommended actions. The duplicate post-analysis evidence is available in a collapsed **Supporting review evidence** section.
+6. Use the sidebar to refresh local history and load a saved report.
 
-For a repeatable presentation without network dependence, select **Use bundled demo data**, inspect the ten clearly labeled fictional reviews, then select **Analyze with Groq**. The `🧪 DEMO DATA` label remains visible in the source and report views.
+For a repeatable collection without requesting a live source page, select **Use bundled demo data** and inspect the ten clearly labeled fictional reviews. The `🧪 DEMO DATA` label remains visible in the source and report views. Selecting **Analyze with Groq** for that demo still requires a valid `GROQ_API_KEY`, network access, and an available Groq service; only demo collection itself is local.
+
+On desktop, the extraction and demo actions share a row, the metric cards use four columns, charts use two columns, and themes and insight panels use multi-column grids. At narrower widths, actions and charts stack, metrics wrap to two columns, themes reduce from three to two and then one column, insight panels stack, and the main content uses tighter padding.
 
 ## API boundaries
 
@@ -131,4 +138,4 @@ Automated tests use fixtures and fakes, so they do not spend Groq quota or depen
 .\.venv\Scripts\python.exe -m compileall -q backend dashboard tests run_app.py
 ```
 
-For the final local smoke test, run the supervisor, open the app in installed Google Chrome, then exercise a live extraction and the explicit bundled demo flow. See [docs/project_status.md](docs/project_status.md) for the current verification record and known limitations.
+The controller-owned final local smoke test must use installed Google Chrome and cover startup readiness, live extraction and Groq analysis, history restoration, safe error paths, explicit demo analysis, responsive layouts, and the application console. That final Chrome pass is still pending for this redesigned build; see [docs/project_status.md](docs/project_status.md) for the current automated record and remaining verification work.

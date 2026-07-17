@@ -2,12 +2,14 @@
 
 ## Runtime topology
 
-The MVP keeps the existing two-process local architecture. `run_app.py` is the only supervisor: it loads the repository-root `.env` without replacing values already present in the parent environment, starts both services with the current Python interpreter, waits for Streamlit readiness, and opens the local dashboard once in the operating system's default browser.
+The MVP keeps the existing two-process local architecture. `run_app.py` is the only supported complete-application launcher: it loads the repository-root `.env` without replacing values already present in the parent environment, starts both services with the current Python interpreter, and opens the local dashboard once in the operating system's default browser only after both services are ready.
 
 ```text
 run_app.py
   ├── Uvicorn / FastAPI       127.0.0.1:8000
+  │     └── GET /health must return HTTP 200 + exactly {"status":"ok"}
   └── Streamlit dashboard     127.0.0.1:8501
+        └── GET /_stcore/health must return HTTP 200
 
 Google Chrome or another local browser
   └── Streamlit HTTP client
@@ -17,7 +19,9 @@ Google Chrome or another local browser
               └── SQLite history store
 ```
 
-The supervisor launches both children from the project root without a shell. It stops a surviving peer when either child exits, cleans up both on `Ctrl+C`, and forces shutdown only after the bounded graceful timeout. A browser-open failure is nonfatal and prints the manual dashboard URL.
+The supervisor launches both children from the project root without a shell. Immediately after both launches, it starts one shared 30-second startup deadline and polls the FastAPI and Streamlit readiness endpoints independently. The browser gate opens only after both probes succeed; backend-only or dashboard-only readiness is insufficient. Once both services are ready, the startup deadline no longer applies and normal process supervision continues.
+
+If readiness is incomplete at the deadline, the supervisor prints `The application did not become ready within 30 seconds.`, returns a nonzero status, and stops both children. If either child exits at any point, the supervisor returns a nonzero status and stops its surviving peer. Cleanup first requests graceful termination, waits up to five seconds per running child, and then kills only a child that did not exit. `Ctrl+C` performs the same cleanup and returns a successful status. A browser-open failure is nonfatal and prints the manual dashboard URL.
 
 ## Staged data flow
 
@@ -29,7 +33,8 @@ The dashboard never imports backend services directly. Streamlit and FastAPI sha
    Streamlit <- CollectionResult (source + normalized reviews)
 
 2. User inspects the evidence
-   Streamlit renders extractor, ratings, dates, and review text
+   Streamlit renders a grouped source summary plus extractor, ratings, dates,
+   and review text in the main flow
 
 3. User explicitly starts analysis
    Streamlit -> POST /api/analyze (the exact displayed collection)
@@ -43,6 +48,8 @@ The dashboard never imports backend services directly. Streamlit and FastAPI sha
 ```
 
 `GET /api/demo` is a separate, deliberate path that loads the bundled local collection. It does not run after a live collection error, and its `is_demo` metadata keeps `🧪 DEMO DATA` visible throughout the dashboard.
+
+The opening workspace keeps live extraction and explicit demo collection side by side on desktop and explains the sequence with a three-step **How it works** strip. Loading demo data avoids a request to a live review page, but a later **Analyze with Groq** action follows the same credential-validation and provider-network path as live evidence.
 
 ## Groq boundary
 
@@ -68,13 +75,25 @@ The collector does not execute JavaScript, log in, paginate, automate a browser,
 
 ## Report and presentation boundary
 
-Metrics are calculated in Python from validated review-level sentiments and ratings. The dashboard renders the extracted review evidence before analysis and uses text-plus-icon treatments so color is not the only cue:
+Metrics are calculated in Python from validated review-level sentiments and ratings. The dashboard renders the extracted review evidence before analysis and then presents the report in this scan order:
+
+1. A report hero with source context and an overall-sentiment badge.
+2. Four metric cards for reviews analyzed, average rating, positive share, and overall sentiment.
+3. A full-width executive summary.
+4. Two customer-signal charts for sentiment mix and rating distribution.
+5. A recurring-theme grid.
+6. Parallel strengths, concerns, and recommended-actions panels.
+7. A collapsed **Supporting review evidence** expander containing the duplicate post-analysis source and review table.
+
+The original pre-analysis evidence remains visible in the main flow; only the repeated evidence beneath a completed report is collapsed. Text-plus-icon treatments ensure color is not the only cue:
 
 - `✅ Positive` is styled in green for strengths and favorable themes.
 - `⚠️ Negative` is styled in red for complaints and unfavorable themes.
 - `➖ Neutral` uses amber, and `↔ Mixed` uses a distinct indigo treatment.
 
-Untrusted source titles, themes, and review text are escaped before being included in styled markup. The dashboard uses Streamlit containers, metric cards, tables, charts, and sidebar controls without storing or displaying any credential.
+Untrusted source titles, themes, model insights, and review text are escaped before being included in styled markup. The dashboard uses Streamlit containers, metric cards, tables, charts, and sidebar controls without storing or displaying any credential.
+
+Responsive CSS preserves the report hierarchy rather than removing information. Desktop uses side-by-side actions, four metric columns, two charts, up to three theme columns, and three insight columns. At the tablet breakpoint, Streamlit action columns and charts stack, metrics wrap to two columns, and themes use two columns. At the mobile breakpoint, the process strip, themes, and insight panels become single-column, while metrics remain a compact two-column grid and container padding is reduced. The sidebar uses Streamlit's automatic initial state for narrow screens.
 
 ## Local history
 
@@ -107,4 +126,4 @@ Each successful report is serialized as validated JSON and saved atomically with
 
 ## Intentional limits
 
-This is a single-machine MVP. It has no browser automation, JavaScript rendering, anti-bot circumvention, login support, authentication, cloud deployment, Docker, workers, queues, background jobs, or universal website compatibility. It also does not treat the bundled demo set as a replacement for a failed live URL.
+This is a single-machine MVP. It has no browser automation, JavaScript rendering, anti-bot circumvention, login support, authentication, cloud deployment, Docker, workers, queues, background jobs, or universal website compatibility. It also does not treat the bundled demo set as a replacement for a failed live URL. Demo collection is local, but demo analysis still depends on valid Groq credentials, provider availability, and network access.

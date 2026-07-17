@@ -1,15 +1,17 @@
 # Project Status
 
 **Date:** July 17, 2026
-**Status:** Groq-only staged MVP implemented and release-smoke-tested locally in Google Chrome.
+**Status:** Reliable dual-service launch and the redesigned staged report are implemented. Automated verification is complete; final installed-Google-Chrome verification is pending and controller-owned.
 
 ## Current feature inventory
 
-- `run_app.py` retains the local FastAPI + Streamlit supervisor. It loads the repository-root `.env` without overriding existing shell or system values, starts FastAPI on `127.0.0.1:8000` and Streamlit on `127.0.0.1:8501`, waits for Streamlit readiness, and opens the dashboard in the operating system's default browser.
-- The UI accepts a public review-page URL, calls `POST /api/collect`, and displays normalized evidence before analysis. Collection is static HTTP only and prefers JSON-LD before conservative HTML review cards.
+- `run_app.py` remains the only supported complete-application launcher. It loads the repository-root `.env` without overriding existing shell or system values and starts FastAPI on `127.0.0.1:8000` plus Streamlit on `127.0.0.1:8501`.
+- The browser opens only after FastAPI `GET /health` returns HTTP 200 with exactly `{"status":"ok"}` and Streamlit `GET /_stcore/health` returns HTTP 200. Both probes share a 30-second startup deadline; timeout or child exit returns a failure and cleans up the running children.
+- The UI accepts a public review-page URL in a bordered extraction workspace, calls `POST /api/collect`, and displays a grouped source summary and normalized evidence before analysis. Collection is static HTTP only and prefers JSON-LD before conservative HTML review cards.
 - `GET /api/demo` loads the ten-review bundled local dataset only after the user selects **Use bundled demo data**. Demo provenance is visible with `🧪 DEMO DATA`; failed live extraction never activates that dataset.
 - `POST /api/analyze` accepts the already displayed source and review evidence, validates `GROQ_API_KEY`, uses the Llama Versatile Groq configuration, validates structured insights, and computes metrics in Python.
-- The Streamlit report uses text, icons, and distinct semantic treatments for positive, negative, neutral, and mixed results. It surfaces strengths, complaints, themes, actions, charts, and review-level sentiment labels without relying on color alone.
+- The Streamlit report follows an evidence-first hierarchy: source and sentiment hero, four metrics, executive summary, customer-signal charts, recurring themes, strengths, concerns, recommended actions, and collapsed duplicate supporting evidence. The original pre-analysis evidence remains visible.
+- Responsive behavior keeps desktop actions and report groups side by side where space permits, then stacks actions, charts, themes, and insight panels at narrower widths while retaining a compact two-column metric grid on mobile.
 - Successful reports are written atomically to local SQLite at `data/review_history.db`. `GET /api/history` returns newest-first summaries, and `GET /api/history/{run_id}` restores one saved report.
 - The backend exposes safe actionable errors for invalid URLs, blocked sites, timeouts, malformed structured review data, missing reviews, missing or invalid Groq configuration, unavailable Groq validation, model-output parsing, and history failures.
 - Credentials, headers, raw AI responses, upstream response bodies, internal exceptions, and tracebacks do not cross the FastAPI boundary.
@@ -35,7 +37,8 @@ Focused tests cover:
 - static collection safety, redirects, limits, JSON-LD priority, HTML fallback, and specific failure codes;
 - SQLite first-use schema creation, atomic save, newest-first summaries, round trips, and safe failures;
 - staged API routes, safe error envelopes, dashboard HTTP boundaries, accessible presentation helpers, and history navigation;
-- supervisor dotenv precedence, browser readiness/open behavior, child lifecycle, and cleanup; and
+- supervisor dotenv precedence, exact FastAPI readiness, independent dual-service readiness order, the shared startup deadline, one-shot browser behavior, child lifecycle, and cleanup;
+- redesigned dashboard source structure, responsive CSS contracts, and retained Streamlit runtime coverage for visible pre-analysis evidence, collapsed duplicate evidence, report order, and chart payloads; and
 - current-facing documentation/source audits for retired configuration or model-choice language.
 
 Run the full local checks with:
@@ -45,24 +48,30 @@ Run the full local checks with:
 .\.venv\Scripts\python.exe -m compileall -q backend dashboard tests run_app.py
 ```
 
-## Final verification record
+## Automated verification record
 
-On July 17, 2026, the merged project-root suite passed **121/121 tests** and `compileall` exited successfully. The existing `GROQ_API_KEY` was confirmed present without reading or printing its value.
+On July 17, 2026, the complete fixture/fake-backed unittest discovery command passed **137/137 tests**, and `compileall -q backend dashboard tests run_app.py` exited with status 0. The automated suite does not contact a live review source or Groq and does not constitute browser-level verification.
 
-The supervised application was then opened in installed Google Chrome and verified end to end:
+## Pending installed-Chrome verification
 
-- `https://web-scraping.dev/product/1` collected five JSON-LD reviews; the evidence table was visible before Groq analysis.
-- Groq analysis completed for that live collection and saved a positive report to SQLite history.
-- Invalid URL and no-review submissions displayed the expected safe, actionable errors; failed collection did not switch to demo data.
-- The explicit demo action displayed its `🧪 DEMO DATA` label, ten bundled reviews, and a mixed Groq report with labeled positive, negative, neutral, and mixed findings.
-- Refreshing history after a browser reload restored saved live and demo reports, including demo provenance.
+The controller owns the final installed-Google-Chrome pass for this reliable-launch and redesigned-report branch. This documentation task does **not** claim that pass has completed. It remains to record:
 
-The Chrome console had no application errors. Streamlit/Vega emitted non-fatal chart warnings for zero-valued series; charts still rendered with the expected data and labels.
+- fresh launch readiness and delayed browser opening until both health contracts succeed;
+- live static extraction, including review count and extractor;
+- live Groq analysis and saved report;
+- history refresh and restored report;
+- invalid-URL and no-review safe error states without implicit demo fallback;
+- explicit demo collection plus provider-backed demo analysis;
+- desktop and narrow responsive layouts; and
+- a clean application console.
+
+The earlier 121-test Chrome smoke record applied to the pre-redesign baseline and is not treated as final evidence for the current branch.
 
 ## Known limitations
 
 - Static HTML collection cannot support pages that require client-side rendering, login, pagination, or access-control circumvention.
 - External page markup can change; only URLs verified with the completed collector are suitable for a live presentation.
 - Groq access, quotas, model availability, and later generative request success remain external service concerns even after pre-analysis validation succeeds.
+- Bundled demo collection avoids a live source-page request, but **Analyze with Groq** still requires a valid configured credential, provider/network access, and available quota.
 - SQLite history is intentionally local to this machine and has no multi-user synchronization or backup layer.
 - Automated tests use fixtures and fakes; live sources and real model calls require the separate local smoke check.
