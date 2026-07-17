@@ -158,6 +158,20 @@ class HistoryStoreTests(unittest.TestCase):
 
         self.assertIsNone(self.store.get(404))
 
+    def test_out_of_range_id_maps_to_a_safe_history_error(self):
+        """Hide SQLite binding details when a supplied ID exceeds its integer range."""
+
+        huge_run_id = 2**63
+
+        with self.assertRaises(AnalysisError) as raised:
+            self.store.get(huge_run_id)
+
+        self.assertEqual(raised.exception.code, "history_failed")
+        self.assertEqual(
+            raised.exception.public_message, "Local analysis history could not be updated."
+        )
+        self.assertNotIn(str(huge_run_id), str(raised.exception))
+
     def test_malformed_stored_json_maps_to_a_safe_history_error(self):
         """Hide corrupt local storage details when a saved report cannot validate."""
 

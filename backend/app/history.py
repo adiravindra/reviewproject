@@ -114,7 +114,7 @@ class HistoryStore:
                 return None
             report = AnalysisResponse.model_validate_json(row[0])
             return report.model_copy(update={"history_id": run_id})
-        except (OSError, sqlite3.Error, TypeError, ValueError, ValidationError):
+        except (OSError, sqlite3.Error, TypeError, ValueError, OverflowError, ValidationError):
             raise AnalysisError("history_failed", _HISTORY_ERROR_MESSAGE) from None
 
     def _ensure_parent_directory(self) -> None:
