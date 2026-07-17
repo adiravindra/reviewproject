@@ -3,6 +3,7 @@
 import html
 import os
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Callable
 
 import streamlit as st
@@ -24,17 +25,40 @@ APP_COMMAND = r".\.venv\Scripts\python.exe run_app.py"
 DASHBOARD_CSS = """
 :root {
     --ri-blue: #2563eb;
-    --ri-navy: #0f1f4a;
-    --ri-slate: #475569;
-    --ri-border: #dbe3ef;
+    --ri-blue-hover: #1d4ed8;
+    --ri-navy: #0f2450;
+    --ri-sidebar: #102437;
+    --ri-slate: #64748b;
+    --ri-border: #dbe4f0;
+    --ri-surface: #ffffff;
+    --ri-surface-subtle: #f8fafc;
+    --ri-shadow-surface: 0 12px 32px rgba(15, 36, 80, .08);
+    --ri-radius-control: 10px;
+    --ri-radius-card: 14px;
+    --ri-radius-surface: 18px;
+    --ri-space-1: 4px;
+    --ri-space-2: 8px;
+    --ri-space-3: 12px;
+    --ri-space-4: 16px;
+    --ri-space-6: 24px;
+    --ri-space-8: 32px;
+    --ri-space-12: 48px;
+    --ri-font-body: 1rem;
+    --ri-font-label: .875rem;
+    --ri-font-section: clamp(1.375rem, 2.4vw, 1.75rem);
+    --ri-font-value: clamp(1.75rem, 3vw, 2.125rem);
     --ri-positive: #15803d;
     --ri-positive-bg: #f0fdf4;
+    --ri-positive-border: #86efac;
     --ri-negative: #b91c1c;
     --ri-negative-bg: #fef2f2;
+    --ri-negative-border: #fca5a5;
     --ri-neutral: #a16207;
     --ri-neutral-bg: #fffbeb;
+    --ri-neutral-border: #fcd34d;
     --ri-mixed: #4f46e5;
     --ri-mixed-bg: #eef2ff;
+    --ri-mixed-border: #a5b4fc;
 }
 [data-testid="stToolbar"] { display: none !important; }
 .stApp { background: #ffffff; color: var(--ri-navy); }
@@ -44,7 +68,13 @@ h1, h2, h3, p, label, [data-testid="stMetricLabel"] { color: var(--ri-navy); }
 h1 { font-size: clamp(2rem, 4vw, 3rem); letter-spacing: -0.04em; font-weight: 750; }
 h2 { letter-spacing: -0.025em; margin-top: 1.4rem; }
 [data-testid="stCaptionContainer"] { color: var(--ri-slate); }
-[data-testid="stSidebar"] { background: #f8fafc; border-right: 1px solid var(--ri-border); }
+[data-testid="stSidebar"] { background: var(--ri-sidebar); border-right: 1px solid var(--ri-border); }
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"] { color: #ffffff; }
 [data-testid="stSidebar"] .block-container { padding: 1.25rem .85rem; }
 [data-testid="stForm"] { border: 1px solid var(--ri-border); border-radius: 16px; padding: 1.25rem; }
 div[data-testid="stTextInput"] input { border-color: #cbd5e1; border-radius: 12px; }
@@ -54,7 +84,7 @@ div[data-testid="stTextInput"] input { border-color: #cbd5e1; border-radius: 12p
 [data-testid="stBaseButton-primaryFormSubmit"],
 .stButton > button[kind="primary"] { background: #2563eb !important; color: #ffffff !important; }
 [data-testid="stBaseButton-primaryFormSubmit"]:hover,
-.stButton > button[kind="primary"]:hover { background: #1d4ed8 !important; }
+.stButton > button[kind="primary"]:hover { background: var(--ri-blue-hover) !important; }
 button:focus-visible, input:focus-visible, [role="button"]:focus-visible {
     outline: 3px solid #93c5fd !important; outline-offset: 2px !important;
 }
@@ -63,15 +93,80 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible {
 [data-testid="stDataFrame"] { border: 1px solid var(--ri-border); border-radius: 12px; overflow: hidden; }
 .ri-badge { display: inline-block; padding: .28rem .55rem; border-radius: 999px; border: 1px solid; font-weight: 700; font-size: .88rem; }
 .ri-card { border: 1px solid var(--ri-border); border-radius: 14px; padding: .9rem 1rem; margin: .45rem 0; background: #ffffff; }
-.ri-positive { color: var(--ri-positive); background: var(--ri-positive-bg); border-color: #86efac; }
-.ri-negative { color: var(--ri-negative); background: var(--ri-negative-bg); border-color: #fca5a5; }
-.ri-neutral { color: var(--ri-neutral); background: var(--ri-neutral-bg); border-color: #fcd34d; }
-.ri-mixed { color: var(--ri-mixed); background: var(--ri-mixed-bg); border-color: #a5b4fc; }
-@media (max-width: 700px) {
+.ri-report-hero,
+.ri-chart-card {
+    border: 1px solid var(--ri-border);
+    border-radius: var(--ri-radius-surface);
+    background: var(--ri-surface);
+    box-shadow: var(--ri-shadow-surface);
+}
+.ri-report-hero { padding: var(--ri-space-6); margin: var(--ri-space-4) 0; }
+.ri-chart-card { padding: var(--ri-space-4); min-width: 0; }
+.ri-metric-grid,
+.ri-insight-grid,
+.ri-theme-grid,
+.ri-chart-grid {
+    display: grid;
+    gap: var(--ri-space-4);
+    width: 100%;
+}
+.ri-metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ri-insight-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ri-theme-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.ri-chart-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ri-metric-card,
+.ri-insight-panel {
+    border: 1px solid var(--ri-border);
+    border-radius: var(--ri-radius-card);
+    background: var(--ri-surface);
+    padding: var(--ri-space-4);
+    min-width: 0;
+}
+.ri-metric-card__label {
+    color: var(--ri-navy);
+    font-size: var(--ri-font-label);
+    font-weight: 700;
+}
+.ri-metric-card__value {
+    color: currentColor;
+    font-size: var(--ri-font-value);
+    font-weight: 750;
+    letter-spacing: -.025em;
+    line-height: 1.2;
+    margin: var(--ri-space-2) 0 var(--ri-space-1);
+}
+.ri-metric-card__detail {
+    color: var(--ri-slate);
+    font-size: var(--ri-font-label);
+    line-height: 1.55;
+}
+.ri-insight-panel h3 {
+    color: currentColor;
+    font-size: 1rem;
+    margin: 0 0 var(--ri-space-2);
+}
+.ri-insight-panel ul { margin: 0; padding-left: 1.25rem; }
+.ri-insight-panel li { line-height: 1.6; }
+.ri-positive { color: var(--ri-positive); background: var(--ri-positive-bg); border-color: var(--ri-positive-border); }
+.ri-negative { color: var(--ri-negative); background: var(--ri-negative-bg); border-color: var(--ri-negative-border); }
+.ri-neutral { color: var(--ri-neutral); background: var(--ri-neutral-bg); border-color: var(--ri-neutral-border); }
+.ri-mixed { color: var(--ri-mixed); background: var(--ri-mixed-bg); border-color: var(--ri-mixed-border); }
+@media (max-width: 900px) {
+    .ri-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ri-chart-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
     .block-container { padding: 1.35rem 1rem 3rem; }
     [data-testid="stForm"] { padding: 1rem; }
     [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: .7rem; }
     [data-testid="stSidebar"] { border-right: 0; }
+    .ri-report-hero,
+    .ri-chart-card,
+    .ri-metric-card,
+    .ri-insight-panel { border-radius: var(--ri-radius-card); }
+    .ri-report-hero { padding: var(--ri-space-4); }
+    .ri-insight-grid,
+    .ri-theme-grid { grid-template-columns: 1fr; }
 }
 """
 
@@ -116,6 +211,17 @@ def sentiment_visual(sentiment: str) -> SentimentVisual:
     return _VISUALS.get(str(sentiment).strip().lower(), _VISUALS["neutral"])
 
 
+def format_history_timestamp(value: Any) -> str:
+    """Format stored ISO timestamps to seconds without timezone suffixes."""
+
+    text = str(value)
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return text
+    return parsed.replace(microsecond=0, tzinfo=None).isoformat(sep=" ", timespec="seconds")
+
+
 def _extractor_label(extractor: Any) -> str:
     """Turn known extractor identifiers into reader-friendly provenance text."""
 
@@ -155,7 +261,7 @@ def review_rows(collection: dict[str, Any], report: dict[str, Any] | None = None
 def history_option(item: dict[str, Any]) -> str:
     """Create a readable provenance label for one history entry."""
 
-    created = str(item.get("created_at", "Unknown time")).replace("T", " ").replace("Z", "")
+    created = format_history_timestamp(item.get("created_at", "Unknown time"))
     title = str(item.get("source_title", item.get("source", "Untitled source")))
     sentiment = sentiment_visual(str(item.get("overall_sentiment", "neutral"))).label
     demo = " · 🧪 DEMO DATA" if item.get("is_demo") is True else ""
@@ -205,6 +311,32 @@ def safe_theme_card_markup(visual: SentimentVisual, name: str, description: str,
         f'<strong>{html.escape(name)}</strong>'
         f'<p>{html.escape(description)}</p>'
         f'<small>{html.escape(str(mentions))} mentions</small>'
+        "</section>"
+    )
+
+
+def safe_metric_card_markup(label: Any, value: Any, detail: Any, semantic: str) -> str:
+    """Build one escaped metric card with a known semantic color treatment."""
+
+    visual = sentiment_visual(semantic)
+    return (
+        f'<section class="ri-metric-card ri-{visual.semantic}">'
+        f'<div class="ri-metric-card__label">{html.escape(str(label))}</div>'
+        f'<div class="ri-metric-card__value">{html.escape(str(value))}</div>'
+        f'<div class="ri-metric-card__detail">{html.escape(str(detail))}</div>'
+        "</section>"
+    )
+
+
+def safe_panel_markup(visual: SentimentVisual, heading: Any, items: list[Any]) -> str:
+    """Build one escaped semantic insight panel and its unordered list."""
+
+    safe_visual = sentiment_visual(visual.semantic)
+    safe_items = "".join(f"<li>{html.escape(str(item))}</li>" for item in items)
+    return (
+        f'<section class="ri-insight-panel ri-{safe_visual.semantic}">'
+        f"<h3>{html.escape(str(safe_visual.icon))} {html.escape(str(heading))}</h3>"
+        f"<ul>{safe_items}</ul>"
         "</section>"
     )
 

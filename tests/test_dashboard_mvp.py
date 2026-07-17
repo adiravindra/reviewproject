@@ -431,6 +431,71 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertNotIn("<script>", markup)
         self.assertIn("safe_theme_card_markup(visual, title, description, mentions)", inspect.getsource(streamlit_app))
 
+    def test_metric_card_markup_escapes_all_values_and_uses_semantic_classes(self):
+        """Keep live metric content escaped inside one semantic metric surface."""
+
+        markup = streamlit_app.safe_metric_card_markup(
+            label="<Reviews>",
+            value="<strong>5</strong>",
+            detail="<em>Analyzed</em>",
+            semantic="positive",
+        )
+
+        self.assertNotIn("<Reviews>", markup)
+        self.assertNotIn("<strong>", markup)
+        self.assertNotIn("<em>", markup)
+        self.assertIn("&lt;Reviews&gt;", markup)
+        self.assertIn("&lt;strong&gt;5&lt;/strong&gt;", markup)
+        self.assertIn("&lt;em&gt;Analyzed&lt;/em&gt;", markup)
+        self.assertIn("ri-metric-card", markup)
+        self.assertIn("ri-positive", markup)
+
+    def test_panel_markup_escapes_heading_and_every_list_item(self):
+        """Escape every model-supplied panel value while retaining semantic context."""
+
+        markup = streamlit_app.safe_panel_markup(
+            sentiment_visual("negative"),
+            "<Concerns>",
+            ["<script>alert('x')</script>", "<b>Price</b>"],
+        )
+
+        self.assertIn('class="ri-insight-panel ri-negative"', markup)
+        self.assertIn("⚠️", markup)
+        self.assertIn("&lt;Concerns&gt;", markup)
+        self.assertIn("&lt;script&gt;alert(&#x27;x&#x27;)&lt;/script&gt;", markup)
+        self.assertIn("&lt;b&gt;Price&lt;/b&gt;", markup)
+        self.assertNotIn("<Concerns>", markup)
+        self.assertNotIn("<script>", markup)
+        self.assertNotIn("<b>", markup)
+        self.assertEqual(markup.count("<li>"), 2)
+
+    def test_history_timestamp_drops_microseconds_and_timezone_suffixes(self):
+        """Keep history labels concise and stable across stored ISO timestamp variants."""
+
+        self.assertEqual(
+            streamlit_app.format_history_timestamp("2025-05-12T10:42:00.123456Z"),
+            "2025-05-12 10:42:00",
+        )
+        self.assertEqual(
+            streamlit_app.format_history_timestamp("2025-05-12T10:42:00.987654+05:30"),
+            "2025-05-12 10:42:00",
+        )
+        self.assertEqual(streamlit_app.format_history_timestamp("Unknown time"), "Unknown time")
+
+    def test_report_css_defines_responsive_semantic_layout_primitives(self):
+        """Expose the reusable report surfaces and both approved responsive breakpoints."""
+
+        for selector in (
+            ".ri-report-hero",
+            ".ri-metric-grid",
+            ".ri-insight-grid",
+            ".ri-theme-grid",
+            ".ri-chart-card",
+        ):
+            self.assertIn(selector, DASHBOARD_CSS)
+        self.assertIn("@media (max-width: 900px)", DASHBOARD_CSS)
+        self.assertIn("@media (max-width: 640px)", DASHBOARD_CSS)
+
     def test_history_option_exposes_source_time_sentiment_and_demo_status(self):
         """Make stored history provenance recognizable without loading its report."""
 
