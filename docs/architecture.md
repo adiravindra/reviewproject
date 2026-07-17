@@ -2,14 +2,15 @@
 
 ## Runtime topology
 
-The MVP keeps the existing two-process local architecture. `run_app.py` is the only supported complete-application launcher: it loads the repository-root `.env` without replacing values already present in the parent environment, starts both services with the current Python interpreter, and opens the local dashboard once in the operating system's default browser only after both services are ready.
+The MVP keeps the existing two-process local architecture. `run_app.py` is the only supported complete-application launcher: it loads the repository-root `.env` without replacing values already present in the parent environment, stages both services with the current Python interpreter, and opens the local dashboard once in the operating system's default browser only after both services are ready.
 
 ```text
-run_app.py
-  ├── Uvicorn / FastAPI       127.0.0.1:8000
-  │     └── GET /health must return HTTP 200 + exactly {"status":"ok"}
-  └── Streamlit dashboard     127.0.0.1:8501
-        └── GET /_stcore/health must return HTTP 200
+run_app.py starts one shared 30-second deadline
+  └── start Uvicorn / FastAPI       127.0.0.1:8000
+        └── wait for GET /health: HTTP 200 + exactly {"status":"ok"}
+              └── start Streamlit dashboard     127.0.0.1:8501
+                    └── wait for GET /_stcore/health: HTTP 200
+                          └── open browser once
 
 Google Chrome or another local browser
   └── Streamlit HTTP client
@@ -19,9 +20,9 @@ Google Chrome or another local browser
               └── SQLite history store
 ```
 
-The supervisor launches both children from the project root without a shell. Immediately after both launches, it starts one shared 30-second startup deadline and polls the FastAPI and Streamlit readiness endpoints independently. The browser gate opens only after both probes succeed; backend-only or dashboard-only readiness is insufficient. Once both services are ready, the startup deadline no longer applies and normal process supervision continues.
+The supervisor launches FastAPI from the project root without a shell and immediately starts one shared 30-second startup deadline. It polls the backend process and exact FastAPI health contract before launching Streamlit, which avoids measured cold-start disk and CPU contention between the two heavyweight Python children. After backend readiness, it launches Streamlit from the same root and waits for the dashboard health endpoint without resetting the original deadline. The browser gate opens only after that second health check succeeds. Once both services are ready, the startup deadline no longer applies and normal process supervision continues.
 
-If readiness is incomplete at the deadline, the supervisor prints `The application did not become ready within 30 seconds.`, returns a nonzero status, and stops both children. If either child exits at any point, the supervisor returns a nonzero status and stops its surviving peer. Cleanup first requests graceful termination, waits up to five seconds per running child, and then kills only a child that did not exit. `Ctrl+C` performs the same cleanup and returns a successful status. A browser-open failure is nonfatal and prints the manual dashboard URL.
+If readiness is incomplete at the deadline, the supervisor prints `The application did not become ready within 30 seconds.`, returns a nonzero status, and stops whichever children were started. A backend timeout or exit before readiness never starts Streamlit. If either child exits after dashboard launch, the supervisor returns a nonzero status and stops its surviving peer. Cleanup first requests graceful termination, waits up to five seconds per running child, and then kills only a child that did not exit. `Ctrl+C` performs cleanup for all started children and returns a successful status. A browser-open failure is nonfatal and prints the manual dashboard URL.
 
 ## Staged data flow
 
@@ -83,9 +84,9 @@ Metrics are calculated in Python from validated review-level sentiments and rati
 4. Two customer-signal charts for sentiment mix and rating distribution.
 5. A recurring-theme grid.
 6. Parallel strengths, concerns, and recommended-actions panels.
-7. A collapsed **Supporting review evidence** expander containing the duplicate post-analysis source and review table.
+7. A collapsed **Supporting review evidence** expander containing the post-analysis source and review table.
 
-The original pre-analysis evidence remains visible in the main flow; only the repeated evidence beneath a completed report is collapsed. Text-plus-icon treatments ensure color is not the only cue:
+The source summary and review table remain visible in the main flow throughout the pre-analysis stage. Once a report exists, that primary evidence workspace is replaced by the report; the source and review evidence is then retained only inside the collapsed **Supporting review evidence** expander. Text-plus-icon treatments ensure color is not the only cue:
 
 - `✅ Positive` is styled in green for strengths and favorable themes.
 - `⚠️ Negative` is styled in red for complaints and unfavorable themes.

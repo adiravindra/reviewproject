@@ -5,12 +5,12 @@
 
 ## Current feature inventory
 
-- `run_app.py` remains the only supported complete-application launcher. It loads the repository-root `.env` without overriding existing shell or system values and starts FastAPI on `127.0.0.1:8000` plus Streamlit on `127.0.0.1:8501`.
-- The browser opens only after FastAPI `GET /health` returns HTTP 200 with exactly `{"status":"ok"}` and Streamlit `GET /_stcore/health` returns HTTP 200. Both probes share a 30-second startup deadline; timeout or child exit returns a failure and cleans up the running children.
+- `run_app.py` remains the only supported complete-application launcher. It loads the repository-root `.env` without overriding existing shell or system values, starts FastAPI on `127.0.0.1:8000`, and launches Streamlit on `127.0.0.1:8501` only after the backend is healthy.
+- One shared 30-second deadline begins when FastAPI launches and remains active through Streamlit startup without resetting. The browser opens only after FastAPI `GET /health` returns HTTP 200 with exactly `{"status":"ok"}` and the subsequently launched Streamlit `GET /_stcore/health` returns HTTP 200. Timeout or child exit returns a failure and cleans up whichever children were started.
 - The UI accepts a public review-page URL in a bordered extraction workspace, calls `POST /api/collect`, and displays a grouped source summary and normalized evidence before analysis. Collection is static HTTP only and prefers JSON-LD before conservative HTML review cards.
 - `GET /api/demo` loads the ten-review bundled local dataset only after the user selects **Use bundled demo data**. Demo provenance is visible with `🧪 DEMO DATA`; failed live extraction never activates that dataset.
 - `POST /api/analyze` accepts the already displayed source and review evidence, validates `GROQ_API_KEY`, uses the Llama Versatile Groq configuration, validates structured insights, and computes metrics in Python.
-- The Streamlit report follows an evidence-first hierarchy: source and sentiment hero, four metrics, executive summary, customer-signal charts, recurring themes, strengths, concerns, recommended actions, and collapsed duplicate supporting evidence. The original pre-analysis evidence remains visible.
+- The source summary and review table remain visible throughout the pre-analysis stage. Once a report exists, that workspace is replaced by the evidence-first report hierarchy: source and sentiment hero, four metrics, executive summary, customer-signal charts, recurring themes, strengths, concerns, recommended actions, and the source/review evidence retained only in the collapsed **Supporting review evidence** expander.
 - Responsive behavior keeps desktop actions and report groups side by side where space permits, then stacks actions, charts, themes, and insight panels at narrower widths while retaining a compact two-column metric grid on mobile.
 - Successful reports are written atomically to local SQLite at `data/review_history.db`. `GET /api/history` returns newest-first summaries, and `GET /api/history/{run_id}` restores one saved report.
 - The backend exposes safe actionable errors for invalid URLs, blocked sites, timeouts, malformed structured review data, missing reviews, missing or invalid Groq configuration, unavailable Groq validation, model-output parsing, and history failures.
@@ -38,7 +38,7 @@ Focused tests cover:
 - SQLite first-use schema creation, atomic save, newest-first summaries, round trips, and safe failures;
 - staged API routes, safe error envelopes, dashboard HTTP boundaries, accessible presentation helpers, and history navigation;
 - supervisor dotenv precedence, exact FastAPI readiness, independent dual-service readiness order, the shared startup deadline, one-shot browser behavior, child lifecycle, and cleanup;
-- redesigned dashboard source structure, responsive CSS contracts, and retained Streamlit runtime coverage for visible pre-analysis evidence, collapsed duplicate evidence, report order, and chart payloads; and
+- redesigned dashboard source structure, responsive CSS contracts, and retained Streamlit runtime coverage for visible pre-analysis evidence, collapsed post-analysis evidence, report order, and chart payloads; and
 - current-facing documentation/source audits for retired configuration or model-choice language.
 
 Run the full local checks with:
@@ -50,7 +50,7 @@ Run the full local checks with:
 
 ## Automated verification record
 
-On July 17, 2026, the complete fixture/fake-backed unittest discovery command passed **137/137 tests**, and `compileall -q backend dashboard tests run_app.py` exited with status 0. The automated suite does not contact a live review source or Groq and does not constitute browser-level verification.
+On July 17, 2026, the complete fixture/fake-backed unittest discovery command passed **143/143 tests**, and `compileall -q backend dashboard tests run_app.py` exited with status 0. The automated suite does not contact a live review source or Groq and does not constitute browser-level verification.
 
 ## Pending installed-Chrome verification
 

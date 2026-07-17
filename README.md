@@ -19,16 +19,16 @@ Bundled demo data is available only through the explicit **Use bundled demo data
 
 ```text
 run_app.py supervisor
-  +-- FastAPI:   http://127.0.0.1:8000
-  |     GET  /health        -> readiness only when body is exactly {"status":"ok"}
-  |     POST /api/collect   -> static collection only
-  |     GET  /api/demo      -> explicit bundled sample only
-  |     POST /api/analyze   -> Groq validation + analysis + SQLite save
-  |     GET  /api/history   -> local saved-run summaries
-  |
-  +-- Streamlit: http://127.0.0.1:8501
-        GET /_stcore/health -> dashboard readiness
-        -> staged evidence, analysis, results, and history UI
+  1. Start FastAPI:   http://127.0.0.1:8000
+       GET  /health        -> ready only with HTTP 200 + exactly {"status":"ok"}
+       POST /api/collect   -> static collection only
+       GET  /api/demo      -> explicit bundled sample only
+       POST /api/analyze   -> Groq validation + analysis + SQLite save
+       GET  /api/history   -> local saved-run summaries
+  2. After FastAPI is ready, start Streamlit: http://127.0.0.1:8501
+       GET /_stcore/health -> ready with HTTP 200
+       -> staged evidence, analysis, results, and history UI
+  3. After Streamlit is ready, open the browser
 ```
 
 The detailed boundary and data-flow description is in [docs/architecture.md](docs/architecture.md).
@@ -65,17 +65,17 @@ REVIEWINSIGHT_GROQ_MODEL=llama-3.3-70b-versatile
 .\.venv\Scripts\python.exe run_app.py
 ```
 
-The supervisor starts FastAPI on `127.0.0.1:8000` and Streamlit on `127.0.0.1:8501`, then polls both readiness endpoints under one 30-second startup deadline. FastAPI is ready only when `GET /health` returns HTTP 200 with exactly `{"status":"ok"}`; Streamlit is ready when `GET /_stcore/health` returns HTTP 200. The supervisor automatically opens `http://127.0.0.1:8501` in the operating system's default browser only after both checks succeed.
+The supervisor stages startup under one shared 30-second deadline to avoid cold-start contention. It starts FastAPI on `127.0.0.1:8000` first and waits until `GET /health` returns HTTP 200 with exactly `{"status":"ok"}`. Only then does it start Streamlit on `127.0.0.1:8501` and wait until `GET /_stcore/health` returns HTTP 200. The deadline starts with the backend and is not reset for the dashboard. The supervisor automatically opens `http://127.0.0.1:8501` in the operating system's default browser only after both stages succeed.
 
-If the complete application does not become ready within 30 seconds, startup returns a failure and both child processes are stopped. An unexpected child exit also fails the run and stops its peer. If only the browser-open attempt fails, the services continue and the supervisor prints the URL for manual use. Press `Ctrl+C` in the supervising terminal for a clean shutdown of both services.
+If the complete application does not become ready within 30 seconds, startup returns a failure and stops whichever child processes were started. A backend exit before readiness never starts Streamlit; a later child exit fails the run and stops its running peer. If only the browser-open attempt fails, the services continue and the supervisor prints the URL for manual use. Press `Ctrl+C` in the supervising terminal for a clean shutdown of all started services.
 
 ## Dashboard flow
 
 1. Use the bordered extraction workspace to paste a public product or review-page URL and select **Extract reviews**. The adjacent **Use bundled demo data** action is always explicit.
 2. Follow the three-step **How it works** strip: extract, review evidence, then analyze.
-3. Inspect the grouped source summary, extractor label, ratings, dates, and written evidence before analysis. Extraction does not call Groq, and the pre-analysis evidence remains visible.
+3. Inspect the grouped source summary, extractor label, ratings, dates, and written evidence before analysis. Extraction does not call Groq, and this evidence remains visible throughout the pre-analysis stage.
 4. Select **Analyze with Groq** only when the evidence is ready. The backend validates `GROQ_API_KEY` before model work.
-5. Scan the report in order: source and overall sentiment, four metric cards, executive summary, sentiment and rating charts, recurring themes, strengths, concerns, and recommended actions. The duplicate post-analysis evidence is available in a collapsed **Supporting review evidence** section.
+5. Once a report exists, scan it in order: source and overall sentiment, four metric cards, executive summary, sentiment and rating charts, recurring themes, strengths, concerns, and recommended actions. At this stage, the source and review evidence is retained only in the collapsed **Supporting review evidence** section.
 6. Use the sidebar to refresh local history and load a saved report.
 
 For a repeatable collection without requesting a live source page, select **Use bundled demo data** and inspect the ten clearly labeled fictional reviews. The `🧪 DEMO DATA` label remains visible in the source and report views. Selecting **Analyze with Groq** for that demo still requires a valid `GROQ_API_KEY`, network access, and an available Groq service; only demo collection itself is local.
