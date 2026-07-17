@@ -1,5 +1,6 @@
-"""Test dashboard client safety, timeout policy, and pure formatting helpers."""
+"""Test dashboard client safety, staged flow, and pure formatting helpers."""
 
+import inspect
 import unittest
 
 import requests
@@ -15,7 +16,17 @@ from dashboard.api_client import (
     request_history,
     request_history_report,
 )
-from dashboard.streamlit_app import DASHBOARD_CSS, metric_values, rating_rows, sentiment_rows
+from dashboard.streamlit_app import (
+    DASHBOARD_CSS,
+    analysis_call,
+    history_option,
+    metric_values,
+    rating_rows,
+    review_rows,
+    safe_badge_markup,
+    sentiment_rows,
+    sentiment_visual,
+)
 
 
 class FakeResponse:
@@ -297,13 +308,23 @@ class DashboardClientTests(unittest.TestCase):
 class DashboardFormattingTests(unittest.TestCase):
     """Group visual-token and report-formatting regression contracts."""
 
-    def test_primary_controls_keep_the_blue_design_token(self):
-        """Keep primary form, radio, and toolbar CSS selectors on the blue token."""
+    def test_accessible_semantic_css_and_controls_keep_the_design_tokens(self):
+        """Keep primary, focus, and named semantic tokens in the responsive CSS."""
 
         self.assertIn('[data-testid="stBaseButton-primaryFormSubmit"]', DASHBOARD_CSS)
-        self.assertIn(":has(input:checked)", DASHBOARD_CSS)
         self.assertIn('[data-testid="stToolbar"]', DASHBOARD_CSS)
         self.assertIn("#2563eb", DASHBOARD_CSS)
+        self.assertIn(":focus-visible", DASHBOARD_CSS)
+        for label, icon, token in (
+            ("Positive", "✅", "--ri-positive"),
+            ("Negative", "⚠️", "--ri-negative"),
+            ("Neutral", "➖", "--ri-neutral"),
+            ("Mixed", "↔", "--ri-mixed"),
+        ):
+            self.assertIn(label, streamlit_app.__doc__ or "")
+            self.assertIn(icon, inspect.getsource(streamlit_app))
+            self.assertIn(token, DASHBOARD_CSS)
+        self.assertNotIn("stRadio", DASHBOARD_CSS)
 
     def test_recovery_guidance_uses_supported_full_application_command(self):
         """Direct recovery through the supported supervisor entry point."""
@@ -329,6 +350,101 @@ class DashboardFormattingTests(unittest.TestCase):
         report = sample_report()
         report["metrics"]["average_rating"] = None
         self.assertEqual(metric_values(report)[1], "Not rated")
+
+    def test_sentiment_visual_has_distinct_labeled_safe_fallbacks(self):
+        """Map every approved sentiment to its text, icon, and distinct semantic token."""
+
+        expected = {
+            "positive": ("✅", "Positive", "positive"),
+            "negative": ("⚠️", "Negative", "negative"),
+            "neutral": ("➖", "Neutral", "neutral"),
+            "mixed": ("↔", "Mixed", "mixed"),
+        }
+        visuals = {}
+        for input_value, expectation in expected.items():
+            visual = sentiment_visual(input_value)
+            self.assertEqual((visual.icon, visual.label, visual.semantic), expectation)
+            visuals[input_value] = (visual.foreground, visual.background, visual.border)
+        self.assertEqual(sentiment_visual("unrecognized").semantic, "neutral")
+        self.assertEqual(len(set(visuals.values())), 4)
+
+    def test_review_rows_preserve_evidence_before_and_join_sentiment_after_analysis(self):
+        """Show extracted facts first and exact review sentiment joins only after analysis."""
+
+        collection = {
+            "source": {"extractor": "json_ld"},
+            "reviews": [
+                {"id": "b", "rating": 2, "date": "2025-01-02", "text": "Second"},
+                {"id": "a", "rating": 5, "date": "2025-01-01", "text": "First"},
+            ],
+        }
+        before = review_rows(collection)
+        self.assertEqual([row["Review"] for row in before], ["Second", "First"])
+        self.assertEqual(before[0]["Rating"], 2)
+        self.assertEqual(before[0]["Date"], "2025-01-02")
+        self.assertEqual(before[0]["Extractor"], "JSON-LD")
+        self.assertNotIn("Sentiment", before[0])
+
+        report = sample_report()
+        report["insights"]["review_sentiments"] = [
+            {"review_id": "a", "sentiment": "positive"},
+            {"review_id": "b", "sentiment": "negative"},
+        ]
+        after = review_rows(collection, report)
+        self.assertEqual(after[0]["Sentiment"], "⚠️ Negative")
+        self.assertEqual(after[0]["Sentiment semantic"], "negative")
+        self.assertEqual(after[1]["Sentiment"], "✅ Positive")
+
+    def test_safe_badge_markup_escapes_untrusted_labels(self):
+        """Escape customer/model text before it is interpolated into styled HTML."""
+
+        markup = safe_badge_markup(sentiment_visual("positive"), "<script>alert('x')</script>")
+        self.assertNotIn("<script>", markup)
+        self.assertIn("&lt;script&gt;", markup)
+        self.assertIn("✅", markup)
+
+    def test_history_option_exposes_source_time_sentiment_and_demo_status(self):
+        """Make stored history provenance recognizable without loading its report."""
+
+        option = history_option(
+            {
+                "id": 7,
+                "created_at": "2025-05-12T10:42:00",
+                "source_title": "Example product",
+                "overall_sentiment": "positive",
+                "is_demo": True,
+            }
+        )
+        self.assertIn("2025-05-12", option)
+        self.assertIn("Example product", option)
+        self.assertIn("Positive", option)
+        self.assertIn("DEMO DATA", option)
+
+    def test_analysis_call_forwards_only_collection_and_base_url(self):
+        """Keep the UI client contract free of a retired analysis argument."""
+
+        collection = {"source": {}, "reviews": []}
+        calls = []
+
+        def fake_request(received_collection, received_base_url):
+            """Record the exact staged UI client call without a network request."""
+
+            calls.append((received_collection, received_base_url))
+            return {"ok": True}
+
+        self.assertEqual(analysis_call(collection, "http://api", request=fake_request), {"ok": True})
+        self.assertEqual(calls, [(collection, "http://api")])
+        self.assertEqual(list(inspect.signature(analysis_call).parameters), ["collection", "base_url", "request"])
+
+    def test_staged_ui_source_removes_retired_controls_and_keeps_explicit_demo(self):
+        """Guard the staged flow against obsolete controls and implicit demo recovery."""
+
+        source = inspect.getsource(streamlit_app)
+        for retired in ("st.radio", "Gemini", "Google", "GOOGLE_API_KEY", "provider_label"):
+            self.assertNotIn(retired, source)
+        self.assertIn("request_demo", source)
+        self.assertIn("DEMO DATA", source)
+        self.assertNotIn("except BackendUnavailable:\n                st.session_state[\"collection\"] = request_demo", source)
 
 
 if __name__ == "__main__":
