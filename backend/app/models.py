@@ -151,5 +151,6 @@ class PublicError(BaseModel):
         "groq_unavailable",
         "analysis_failed",
         "model_output_invalid",
+        "history_failed",
     ]
     message: str
