@@ -28,6 +28,9 @@ MAX_REDIRECTS = 3
 # before the parser ever receives an untrusted response body.
 MAX_RESPONSE_BYTES = 1024 * 1024
 COLLECTION_MESSAGE = "The page could not be read. Try another public review page."
+SITE_BLOCKED_MESSAGE = "The website blocked automated access. Try another public review page."
+TIMEOUT_MESSAGE = "The website took too long to respond. Try again or use another page."
+MALFORMED_JSON_LD_MESSAGE = "Review data on this page is malformed and could not be read."
 # An explicit product-scoped identity avoids impersonating a browser and gives
 # public-site operators useful context for this narrowly scoped static fetcher.
 USER_AGENT = "ReviewInsight/1.0 (+static public review analysis)"
@@ -74,13 +77,15 @@ def collect_reviews(
 
         # Structured review semantics are stronger evidence than CSS naming, so
         # HTML cards are used only when JSON-LD yields no review candidates.
-        title, candidates = _extract_json_ld(html)
+        title, candidates, malformed_review_json_ld = _extract_json_ld(html)
         extractor = "json_ld"
         if not candidates:
             title, candidates = _extract_html_cards(html)
             extractor = "html_cards"
         reviews = _normalize(candidates, limit=40)
         if len(reviews) < 2:
+            if malformed_review_json_ld and extractor == "html_cards":
+                raise CollectionError("malformed_json_ld", MALFORMED_JSON_LD_MESSAGE)
             raise CollectionError("no_reviews", "At least two public reviews are required.")
         return CollectionResult(
             source=SourceInfo(
@@ -93,6 +98,8 @@ def collect_reviews(
         )
     except CollectionError:
         raise
+    except requests.Timeout:
+        raise CollectionError("collection_timeout", TIMEOUT_MESSAGE) from None
     except (requests.RequestException, ValueError, TypeError, KeyError, json.JSONDecodeError):
         raise CollectionError("collection_failed", COLLECTION_MESSAGE) from None
     except Exception:
@@ -134,8 +141,13 @@ def _fetch_once(client: requests.Session, url: str):
             allow_redirects=False,
             stream=True,
         )
+    except requests.Timeout:
+        raise CollectionError("collection_timeout", TIMEOUT_MESSAGE) from None
     except requests.RequestException:
         raise CollectionError("collection_failed", COLLECTION_MESSAGE) from None
+    if response.status_code in {401, 403, 429}:
+        response.close()
+        raise CollectionError("site_blocked", SITE_BLOCKED_MESSAGE)
     if not isinstance(getattr(response, "status_code", None), int) or response.status_code >= 400:
         response.close()
         raise CollectionError("collection_failed", COLLECTION_MESSAGE)
@@ -161,6 +173,8 @@ def _read_html(response) -> str:
         return b"".join(chunks).decode("utf-8", errors="replace")
     except CollectionError:
         raise
+    except requests.Timeout:
+        raise CollectionError("collection_timeout", TIMEOUT_MESSAGE) from None
     except Exception:
         raise CollectionError("collection_failed", COLLECTION_MESSAGE) from None
     finally:
@@ -179,12 +193,13 @@ def _walk_json(value: Any) -> Iterable[dict[str, Any]]:
             yield from _walk_json(child)
 
 
-def _extract_json_ld(html: str) -> tuple[str | None, list[dict[str, Any]]]:
-    """Extract review bodies and product title from valid JSON-LD objects."""
+def _extract_json_ld(html: str) -> tuple[str | None, list[dict[str, Any]], bool]:
+    """Extract reviews and report malformed JSON-LD that claims review content."""
 
     soup = BeautifulSoup(html, "html.parser")
     title = None
     candidates: list[dict[str, Any]] = []
+    malformed_review_json_ld = False
     for script in soup.select('script[type="application/ld+json"]'):
         raw = script.string or script.get_text()
         if not raw.strip():
@@ -192,6 +207,8 @@ def _extract_json_ld(html: str) -> tuple[str | None, list[dict[str, Any]]]:
         try:
             document = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
+            if re.search(r'["\'](?:review|reviewBody)["\']\s*:', raw, flags=re.IGNORECASE):
+                malformed_review_json_ld = True
             continue
         objects = list(_walk_json(document))
         if title is None:
@@ -211,7 +228,7 @@ def _extract_json_ld(html: str) -> tuple[str | None, list[dict[str, Any]]]:
             candidates.append(
                 {"text": body, "rating": rating, "date": _clean_text(item.get("datePublished"))}
             )
-    return title, candidates
+    return title, candidates, malformed_review_json_ld
 
 
 def _extract_html_cards(html: str) -> tuple[str | None, list[dict[str, Any]]]:

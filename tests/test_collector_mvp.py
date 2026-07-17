@@ -4,6 +4,8 @@ import socket
 import unittest
 from pathlib import Path
 
+import requests
+
 from backend.app.collector import CollectionError, collect_reviews
 
 
@@ -76,6 +78,22 @@ class FixtureSession(TextSession):
         """Read fixture text using the same UTF-8 assumption as the tests."""
 
         super().__init__(Path(path).read_text(encoding="utf-8"))
+
+
+class RaisingSession:
+    """Simulate a request failure without exposing its implementation details."""
+
+    def __init__(self, error):
+        """Keep the error raised by the one attempted static request."""
+
+        self.error = error
+        self.calls = 0
+
+    def get(self, url, **kwargs):
+        """Raise the configured transport failure when collection fetches."""
+
+        self.calls += 1
+        raise self.error
 
 
 def cards(texts):
@@ -213,6 +231,93 @@ class CollectorTests(unittest.TestCase):
                 resolver=public_resolver,
             )
         self.assertEqual(raised.exception.code, "collection_failed")
+
+    def test_blocked_statuses_have_one_safe_public_classification(self):
+        """Map common automation blocks to a stable, body-free response."""
+
+        marker = "RAW_RESPONSE_MARKER_SHOULD_NOT_LEAK"
+        for status in (401, 403, 429):
+            with self.subTest(status=status):
+                response = FakeResponse(marker, status_code=status)
+                with self.assertRaises(CollectionError) as raised:
+                    collect_reviews(
+                        "https://example.com/reviews",
+                        session=TextSession("", responses=[response]),
+                        resolver=public_resolver,
+                    )
+                self.assertEqual(raised.exception.code, "site_blocked")
+                self.assertEqual(
+                    raised.exception.public_message,
+                    "The website blocked automated access. Try another public review page.",
+                )
+                self.assertNotIn(marker, raised.exception.public_message)
+
+    def test_timeout_has_safe_public_classification(self):
+        """Classify request timeouts without returning the transport exception text."""
+
+        marker = "TIMEOUT_DETAIL_SHOULD_NOT_LEAK"
+        with self.assertRaises(CollectionError) as raised:
+            collect_reviews(
+                "https://example.com/reviews",
+                session=RaisingSession(requests.Timeout(marker)),
+                resolver=public_resolver,
+            )
+        self.assertEqual(raised.exception.code, "collection_timeout")
+        self.assertEqual(
+            raised.exception.public_message,
+            "The website took too long to respond. Try again or use another page.",
+        )
+        self.assertNotIn(marker, raised.exception.public_message)
+
+    def test_malformed_review_json_ld_is_reported_when_cards_are_insufficient(self):
+        """Classify unusable review-shaped JSON-LD without exposing its script."""
+
+        marker = "MALFORMED_REVIEW_JSON_MARKER_SHOULD_NOT_LEAK"
+        html = f'<script type="application/ld+json">{{"reviewBody":"{marker}"</script>'
+        with self.assertRaises(CollectionError) as raised:
+            collect_reviews("https://example.com/reviews", session=TextSession(html), resolver=public_resolver)
+        self.assertEqual(raised.exception.code, "malformed_json_ld")
+        self.assertEqual(
+            raised.exception.public_message,
+            "Review data on this page is malformed and could not be read.",
+        )
+        self.assertNotIn(marker, raised.exception.public_message)
+
+    def test_malformed_unrelated_json_ld_still_reports_no_reviews(self):
+        """Ignore malformed structured data that does not claim to hold reviews."""
+
+        html = '<script type="application/ld+json">{"name":"irrelevant"</script>'
+        with self.assertRaises(CollectionError) as raised:
+            collect_reviews("https://example.com/reviews", session=TextSession(html), resolver=public_resolver)
+        self.assertEqual(raised.exception.code, "no_reviews")
+
+    def test_valid_cards_win_over_malformed_review_json_ld(self):
+        """Use sufficient conservative HTML cards when review JSON-LD cannot be read."""
+
+        html = (
+            '<script type="application/ld+json">{"reviewBody":"unfinished"</script>'
+            + cards(["Clear sound and a comfortable fit.", "Useful controls and dependable battery life."])
+        )
+        result = collect_reviews("https://example.com/reviews", session=TextSession(html), resolver=public_resolver)
+        self.assertEqual(result.source.extractor, "html_cards")
+        self.assertEqual(len(result.reviews), 2)
+
+    def test_generic_connection_error_remains_safely_generic(self):
+        """Leave non-timeout transport failures in the generic collection class."""
+
+        marker = "CONNECTION_DETAIL_SHOULD_NOT_LEAK"
+        with self.assertRaises(CollectionError) as raised:
+            collect_reviews(
+                "https://example.com/reviews",
+                session=RaisingSession(requests.ConnectionError(marker)),
+                resolver=public_resolver,
+            )
+        self.assertEqual(raised.exception.code, "collection_failed")
+        self.assertEqual(
+            raised.exception.public_message,
+            "The page could not be read. Try another public review page.",
+        )
+        self.assertNotIn(marker, raised.exception.public_message)
 
 
 if __name__ == "__main__":
