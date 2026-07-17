@@ -736,6 +736,7 @@ def main() -> None:
                         with st.spinner("Analyzing normalized review evidence…"):
                             st.session_state["latest_report"] = analysis_call(collection, base_url)
                         _load_history(base_url)
+                        st.rerun()
                     except BackendUnavailable:
                         _unavailable()
                     except ApiClientError as exc:

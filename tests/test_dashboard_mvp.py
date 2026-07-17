@@ -705,6 +705,28 @@ class DashboardRuntimeTests(unittest.TestCase):
         self.assertIn("Review evidence", [element.value for element in app.subheader])
         self.assertIn("Analyze with Groq", [element.label for element in app.button])
 
+    def test_successful_analysis_transition_renders_only_the_report(self):
+        """Rerun immediately after analysis so the evidence workspace is not duplicated."""
+
+        report = sample_report()
+        app = AppTest.from_file(streamlit_app.__file__)
+        app.session_state["collection"] = {"source": report["source"], "reviews": report["reviews"]}
+        with (
+            patch("dashboard.api_client.check_health", return_value=True),
+            patch("dashboard.api_client.request_analysis", return_value=report),
+            patch("dashboard.api_client.request_history", return_value=[]),
+        ):
+            app.run(timeout=30)
+            next(button for button in app.button if button.label == "Analyze with Groq").click()
+            app.run(timeout=30)
+
+        self.assertEqual(list(app.exception), [])
+        self.assertNotIn("Analyze with Groq", [element.label for element in app.button])
+        self.assertNotIn("Review evidence", [element.value for element in app.subheader])
+        self.assertEqual(len(app.expander), 1)
+        self.assertEqual(app.expander[0].label, "Supporting review evidence")
+        self.assertEqual(len(app.dataframe), 1)
+
     def test_post_analysis_runtime_orders_sections_and_collapses_only_duplicate_evidence(self):
         """Render one ordered report with warning-free charts and one collapsed evidence duplicate."""
 

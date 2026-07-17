@@ -130,16 +130,24 @@ def run(
         backend = popen(backend_command, cwd=PROJECT_ROOT)
         startup_started = monotonic()
 
+        def startup_deadline_expired() -> bool:
+            """Report and flag expiry of the one shared startup deadline."""
+
+            if monotonic() - startup_started < STARTUP_TIMEOUT_SECONDS:
+                return False
+            report("The application did not become ready within 30 seconds.")
+            return True
+
         while True:
             returncode = backend.poll()
             if returncode is not None:
                 return returncode or 1
-            if backend_ready():
-                break
-            startup_elapsed = monotonic() - startup_started
-            if startup_elapsed >= STARTUP_TIMEOUT_SECONDS:
-                report("The application did not become ready within 30 seconds.")
+            if startup_deadline_expired():
                 return 1
+            if backend_ready():
+                if startup_deadline_expired():
+                    return 1
+                break
             sleep(POLL_INTERVAL_SECONDS)
 
         dashboard = popen(dashboard_command, cwd=PROJECT_ROOT)
@@ -152,22 +160,23 @@ def run(
                 returncode = process.poll()
                 if returncode is not None:
                     return returncode or 1
-            if not browser_attempted and dashboard_ready():
-                application_ready = True
-                browser_attempted = True
-                try:
-                    browser_opened = open_browser(DASHBOARD_URL)
-                except Exception:
-                    browser_opened = False
-                if not browser_opened:
-                    report(
-                        f"Open {DASHBOARD_URL} manually; "
-                        "the default browser could not be started."
-                    )
-            startup_elapsed = monotonic() - startup_started
-            if not application_ready and startup_elapsed >= STARTUP_TIMEOUT_SECONDS:
-                report("The application did not become ready within 30 seconds.")
-                return 1
+            if not application_ready:
+                if startup_deadline_expired():
+                    return 1
+                if dashboard_ready() and backend_ready():
+                    if startup_deadline_expired():
+                        return 1
+                    application_ready = True
+                    browser_attempted = True
+                    try:
+                        browser_opened = open_browser(DASHBOARD_URL)
+                    except Exception:
+                        browser_opened = False
+                    if not browser_opened:
+                        report(
+                            f"Open {DASHBOARD_URL} manually; "
+                            "the default browser could not be started."
+                        )
             sleep(POLL_INTERVAL_SECONDS)
     # User-requested shutdown is successful; startup and unexpected peer exits
     # remain nonzero so scripts can distinguish them from a clean Ctrl+C.

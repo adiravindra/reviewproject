@@ -296,7 +296,7 @@ class RunAppTests(unittest.TestCase):
     def test_browser_waits_until_backend_and_dashboard_are_ready(self):
         """Open only after both local application peers report healthy."""
 
-        backend_ready = SequenceResult([False, True])
+        backend_ready = SequenceResult([False, True, True])
         dashboard_ready = SequenceResult([True, True])
         opened = []
         sleep_calls = 0
@@ -326,7 +326,7 @@ class RunAppTests(unittest.TestCase):
 
         fake_popen = FakePopen([FakeProcess(), FakeProcess()])
         launch_counts_at_backend_probe = []
-        backend_results = iter([False, True])
+        backend_results = iter([False, True, True])
         sleep_calls = 0
 
         def backend_ready():
@@ -353,7 +353,7 @@ class RunAppTests(unittest.TestCase):
         )
 
         self.assertEqual(result, 0)
-        self.assertEqual(launch_counts_at_backend_probe, [1, 1])
+        self.assertEqual(launch_counts_at_backend_probe, [1, 1, 2])
         self.assertEqual(len(fake_popen.calls), 2)
 
     def test_backend_timeout_never_starts_dashboard_and_cleans_backend(self):
@@ -369,7 +369,7 @@ class RunAppTests(unittest.TestCase):
             sleep=lambda _: None,
             load_environment=lambda: None,
             backend_ready=lambda: False,
-            monotonic=SequenceResult([0.0, STARTUP_TIMEOUT_SECONDS]),
+            monotonic=SequenceResult([0.0, 0.0, 0.0, STARTUP_TIMEOUT_SECONDS]),
             report=messages.append,
         )
 
@@ -432,8 +432,8 @@ class RunAppTests(unittest.TestCase):
 
         events = []
         processes = iter([FakeProcess(), FakeProcess()])
-        backend_results = iter([False, True, True])
-        dashboard_results = iter([False, True])
+        backend_results = iter([False, True, False, True])
+        dashboard_results = iter([False, True, True])
         sleep_calls = 0
 
         def popen(command, **kwargs):
@@ -468,7 +468,7 @@ class RunAppTests(unittest.TestCase):
 
             nonlocal sleep_calls
             sleep_calls += 1
-            if sleep_calls == 3:
+            if sleep_calls == 4:
                 raise KeyboardInterrupt
 
         result = run(
@@ -490,6 +490,9 @@ class RunAppTests(unittest.TestCase):
                 "launch_dashboard",
                 "dashboard:False",
                 "dashboard:True",
+                "backend:False",
+                "dashboard:True",
+                "backend:True",
                 "open_browser",
             ],
         )
@@ -507,7 +510,7 @@ class RunAppTests(unittest.TestCase):
             load_environment=lambda: None,
             backend_ready=lambda: True,
             dashboard_ready=lambda: False,
-            monotonic=SequenceResult([0.0, STARTUP_TIMEOUT_SECONDS]),
+            monotonic=SequenceResult([0.0, 0.0, 0.0, STARTUP_TIMEOUT_SECONDS]),
             open_browser=lambda url: opened.append(url) or True,
             report=messages.append,
         )
@@ -520,8 +523,8 @@ class RunAppTests(unittest.TestCase):
             ["The application did not become ready within 30 seconds."],
         )
 
-    def test_ready_application_continues_past_startup_timeout(self):
-        """Keep supervising healthy peers after the startup deadline passes."""
+    def test_readiness_after_startup_deadline_times_out(self):
+        """Reject health responses first observed after the shared startup deadline."""
 
         fake_popen = FakePopen([FakeProcess(), FakeProcess()])
         messages = []
@@ -530,7 +533,7 @@ class RunAppTests(unittest.TestCase):
         clock_calls = 0
 
         def sleep(_):
-            """End sustained healthy supervision with an explicit Ctrl+C."""
+            """End the current late-readiness behavior after its unexpected sleep."""
 
             nonlocal sleep_calls
             sleep_calls += 1
@@ -541,7 +544,7 @@ class RunAppTests(unittest.TestCase):
 
             nonlocal clock_calls
             clock_calls += 1
-            return [0.0, STARTUP_TIMEOUT_SECONDS + 1.0][clock_calls - 1]
+            return 0.0 if clock_calls == 1 else STARTUP_TIMEOUT_SECONDS + 1.0
 
         result = run(
             popen=fake_popen,
@@ -554,11 +557,11 @@ class RunAppTests(unittest.TestCase):
             report=messages.append,
         )
 
-        self.assertEqual(result, 0)
+        self.assertEqual(result, 1)
         self.assertEqual(clock_calls, 2)
-        self.assertEqual(sleep_calls, 1)
-        self.assertEqual(opened, [DASHBOARD_URL])
-        self.assertEqual(messages, [])
+        self.assertEqual(sleep_calls, 0)
+        self.assertEqual(opened, [])
+        self.assertEqual(messages, ["The application did not become ready within 30 seconds."])
 
     def test_full_readiness_disables_shared_startup_timeout(self):
         """Keep supervising after both staged gates beat the shared deadline."""
@@ -576,11 +579,11 @@ class RunAppTests(unittest.TestCase):
             return True
 
         def monotonic():
-            """Advance past the shared startup deadline after full readiness."""
+            """Keep every startup gate inside the shared deadline."""
 
             nonlocal clock_calls
             clock_calls += 1
-            return [0.0, STARTUP_TIMEOUT_SECONDS + 1.0][clock_calls - 1]
+            return [0.0, 1.0, 2.0, 3.0, 4.0][clock_calls - 1]
 
         def sleep(_):
             """End healthy supervision explicitly after the deadline."""
@@ -599,8 +602,8 @@ class RunAppTests(unittest.TestCase):
         )
 
         self.assertEqual(result, 0)
-        self.assertEqual(backend_probe_launch_counts, [1])
-        self.assertEqual(clock_calls, 2)
+        self.assertEqual(backend_probe_launch_counts, [1, 2])
+        self.assertEqual(clock_calls, 5)
         self.assertEqual(opened, [DASHBOARD_URL])
         self.assertEqual(messages, [])
 
