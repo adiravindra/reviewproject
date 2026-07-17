@@ -5,7 +5,16 @@ import unittest
 import requests
 
 import dashboard.streamlit_app as streamlit_app
-from dashboard.api_client import ApiClientError, BackendUnavailable, check_health, request_analysis
+from dashboard.api_client import (
+    ApiClientError,
+    BackendUnavailable,
+    check_health,
+    request_analysis,
+    request_collection,
+    request_demo,
+    request_history,
+    request_history_report,
+)
 from dashboard.streamlit_app import DASHBOARD_CSS, metric_values, rating_rows, sentiment_rows
 
 
@@ -25,29 +34,41 @@ class FakeResponse:
         return self.payload
 
 
+class MalformedResponse(FakeResponse):
+    """Simulate a response whose body cannot be decoded as JSON."""
+
+    def json(self):
+        """Raise the same safe-to-handle decode error as a malformed body."""
+
+        raise ValueError("invalid JSON")
+
+
 class FakeSession:
-    """Simulate healthy backend calls while recording timeout and payload choices."""
+    """Simulate HTTP calls while recording their public client contract."""
 
-    def __init__(self, *, get_response=None, post_status=200, post_json=None):
-        """Configure health and analysis responses for client tests."""
+    def __init__(self, *, get_responses=None, post_responses=None, error=None):
+        """Configure route responses or one transport error for every request."""
 
-        self.get_response = get_response or {"status": "ok"}
-        self.post_status = post_status
-        self.post_json = post_json or sample_report()
-        self.get_call = None
-        self.post_call = None
+        self.get_responses = get_responses or {}
+        self.post_responses = post_responses or {}
+        self.error = error
+        self.calls = []
 
     def get(self, url, timeout):
-        """Record and answer a health request."""
+        """Record and answer a GET request."""
 
-        self.get_call = (url, timeout)
-        return FakeResponse(self.get_response)
+        self.calls.append(("get", url, timeout))
+        if self.error:
+            raise self.error
+        return self.get_responses[url]
 
     def post(self, url, json, timeout):
-        """Record and answer an analysis request."""
+        """Record and answer a POST request."""
 
-        self.post_call = (url, json, timeout)
-        return FakeResponse(self.post_json, status_code=self.post_status)
+        self.calls.append(("post", url, json, timeout))
+        if self.error:
+            raise self.error
+        return self.post_responses[url]
 
 
 class FailingSession:
@@ -119,9 +140,13 @@ class DashboardClientTests(unittest.TestCase):
     def test_health_uses_a_short_timeout(self):
         """Keep readiness probing on its dedicated short timeout."""
 
-        session = FakeSession(get_response={"status": "ok"})
+        session = FakeSession(
+            get_responses={
+                "http://127.0.0.1:8000/health": FakeResponse({"status": "ok"})
+            }
+        )
         self.assertTrue(check_health("http://127.0.0.1:8000", session=session))
-        self.assertEqual(session.get_call, ("http://127.0.0.1:8000/health", 2))
+        self.assertEqual(session.calls, [("get", "http://127.0.0.1:8000/health", 2)])
 
     def test_health_failure_returns_false_without_os_details(self):
         """Reduce health transport failures to false without leaking OS details."""
@@ -130,104 +155,143 @@ class DashboardClientTests(unittest.TestCase):
         self.assertFalse(check_health("http://127.0.0.1:8000", session=session))
 
     def test_connection_failure_is_backend_unavailable(self):
-        """Raise the curated backend-unavailable error for analysis connection loss."""
+        """Reduce every stage's connection failure to the safe unavailable error."""
 
-        session = FailingSession(requests.ConnectionError("OS detail"))
-        with self.assertRaises(BackendUnavailable) as raised:
-            request_analysis(
-                "https://example.com",
-                "google",
-                "http://127.0.0.1:8000",
-                session=session,
-            )
-        self.assertNotIn("OS detail", str(raised.exception))
+        for request in (
+            lambda session: request_collection("https://example.com", "http://127.0.0.1:8000", session=session),
+            lambda session: request_demo("http://127.0.0.1:8000", session=session),
+            lambda session: request_analysis({"source": {}, "reviews": []}, "http://127.0.0.1:8000", session=session),
+            lambda session: request_history("http://127.0.0.1:8000", session=session),
+            lambda session: request_history_report(1, "http://127.0.0.1:8000", session=session),
+        ):
+            with self.subTest(request=request):
+                with self.assertRaises(BackendUnavailable) as raised:
+                    request(FailingSession(requests.ConnectionError("OS detail")))
+                self.assertEqual(str(raised.exception), "The FastAPI backend is not reachable.")
+
+    def test_timeout_failure_is_backend_unavailable_for_every_stage(self):
+        """Reduce every stage's timeout failure to the safe unavailable error."""
+
+        for request in (
+            lambda session: request_collection("https://example.com", "http://127.0.0.1:8000", session=session),
+            lambda session: request_demo("http://127.0.0.1:8000", session=session),
+            lambda session: request_analysis({"source": {}, "reviews": []}, "http://127.0.0.1:8000", session=session),
+            lambda session: request_history("http://127.0.0.1:8000", session=session),
+            lambda session: request_history_report(1, "http://127.0.0.1:8000", session=session),
+        ):
+            with self.subTest(request=request):
+                with self.assertRaises(BackendUnavailable):
+                    request(FailingSession(requests.Timeout("network detail")))
 
     def test_structured_api_error_is_preserved(self):
         """Preserve documented error code and message from JSON detail."""
 
-        session = FakeSession(
-            post_status=422,
-            post_json={
-                "detail": {
-                    "code": "no_reviews",
-                    "message": "At least two public reviews are required.",
-                }
-            },
-        )
-        with self.assertRaises(ApiClientError) as raised:
-            request_analysis(
-                "https://example.com",
-                "google",
-                "http://127.0.0.1:8000",
-                session=session,
+        session = FakeSession(post_responses={
+            "http://127.0.0.1:8000/api/collect": FakeResponse(
+                {"detail": {"code": "no_reviews", "message": "At least two public reviews are required."}},
+                status_code=422,
             )
+        })
+        with self.assertRaises(ApiClientError) as raised:
+            request_collection("https://example.com", "http://127.0.0.1:8000", session=session)
         self.assertEqual(raised.exception.code, "no_reviews")
         self.assertEqual(str(raised.exception), "At least two public reviews are required.")
 
-    def test_structured_credential_errors_preserve_only_safe_fields(self):
-        """Discard extra provider and authorization fields from credential errors."""
+    def test_structured_api_error_discards_sensitive_extra_fields(self):
+        """Preserve exactly safe nested fields and discard untrusted extras."""
 
-        cases = [
-            (
-                401,
-                "invalid_api_key",
-                "The selected credential is invalid.",
-            ),
-            (
-                503,
-                "provider_unavailable",
-                "The selected provider is temporarily unavailable.",
-            ),
-        ]
-        for status, code, safe_message in cases:
-            with self.subTest(code=code):
-                session = FakeSession(
-                    post_status=status,
-                    post_json={
-                        "detail": {
-                            "code": code,
-                            "message": safe_message,
-                            "provider_body": "raw provider body details",
-                            "authorization": "Bearer fake-secret-key",
-                            "provider_header": "x-goog-api-key: fake-google-key",
-                        }
-                    },
-                )
+        session = FakeSession(post_responses={
+            "http://127.0.0.1:8000/api/collect": FakeResponse(
+                {"detail": {"code": "no_reviews", "message": "At least two reviews are required.", "token": "secret-value", "raw_body": "private details"}},
+                status_code=422,
+            )
+        })
+        with self.assertRaises(ApiClientError) as raised:
+            request_collection("https://example.com", "http://127.0.0.1:8000", session=session)
+        self.assertEqual(raised.exception.code, "no_reviews")
+        self.assertEqual(str(raised.exception), "At least two reviews are required.")
+        self.assertNotIn("secret-value", str(raised.exception))
+        self.assertNotIn("private details", str(raised.exception))
+
+    def test_collection_uses_staged_endpoint_payload_and_timeout(self):
+        """Collect a URL before analysis with its dedicated timeout budget."""
+
+        collection = {"source": {"url": "https://example.com"}, "reviews": []}
+        session = FakeSession(post_responses={"http://127.0.0.1:8000/api/collect": FakeResponse(collection)})
+        self.assertEqual(request_collection("https://example.com", "http://127.0.0.1:8000/", session=session), collection)
+        self.assertEqual(session.calls, [("post", "http://127.0.0.1:8000/api/collect", {"url": "https://example.com"}, 15)])
+
+    def test_demo_uses_staged_endpoint_and_timeout(self):
+        """Load deterministic demo collection data with its short work budget."""
+
+        collection = {"source": {"url": "demo"}, "reviews": []}
+        session = FakeSession(get_responses={"http://127.0.0.1:8000/api/demo": FakeResponse(collection)})
+        self.assertEqual(request_demo("http://127.0.0.1:8000/", session=session), collection)
+        self.assertEqual(session.calls, [("get", "http://127.0.0.1:8000/api/demo", 15)])
+
+    def test_analysis_sends_only_collection_source_and_reviews(self):
+        """Analyze an already collected payload using only its required fields."""
+
+        collection = {"source": {"url": "https://example.com"}, "reviews": [{"text": "Good"}], "unused": "discarded"}
+        session = FakeSession(post_responses={"http://127.0.0.1:8000/api/analyze": FakeResponse(sample_report())})
+        self.assertEqual(request_analysis(collection, "http://127.0.0.1:8000/", session=session), sample_report())
+        self.assertEqual(session.calls, [("post", "http://127.0.0.1:8000/api/analyze", {"source": collection["source"], "reviews": collection["reviews"]}, 45)])
+
+    def test_history_uses_list_endpoint_and_timeout(self):
+        """Request run history with its own response shape and timeout."""
+
+        history = [{"id": 1, "source": "Demo"}]
+        session = FakeSession(get_responses={"http://127.0.0.1:8000/api/history": FakeResponse(history)})
+        self.assertEqual(request_history("http://127.0.0.1:8000/", session=session), history)
+        self.assertEqual(session.calls, [("get", "http://127.0.0.1:8000/api/history", 5)])
+
+    def test_history_report_uses_object_endpoint_and_timeout(self):
+        """Request one stored report with its own response shape and timeout."""
+
+        report = sample_report()
+        session = FakeSession(get_responses={"http://127.0.0.1:8000/api/history/7": FakeResponse(report)})
+        self.assertEqual(request_history_report(7, "http://127.0.0.1:8000/", session=session), report)
+        self.assertEqual(session.calls, [("get", "http://127.0.0.1:8000/api/history/7", 5)])
+
+    def test_invalid_history_id_is_rejected_without_a_request(self):
+        """Reject locally invalid history IDs without reaching the backend."""
+
+        for run_id in (0, -1, True, "1"):
+            with self.subTest(run_id=run_id):
+                session = FakeSession()
                 with self.assertRaises(ApiClientError) as raised:
-                    request_analysis(
-                        "https://example.com",
-                        "google",
-                        "http://127.0.0.1:8000",
-                        session=session,
-                    )
-                self.assertEqual(raised.exception.code, code)
-                self.assertEqual(str(raised.exception), safe_message)
-                message = str(raised.exception)
-                self.assertNotIn("fake-secret-key", message)
-                self.assertNotIn("fake-google-key", message)
-                self.assertNotIn("Bearer", message)
-                self.assertNotIn("x-goog-api-key", message)
-                self.assertNotIn("raw provider body", message)
+                    request_history_report(run_id, "http://127.0.0.1:8000", session=session)
+                self.assertEqual(raised.exception.code, "history_not_found")
+                self.assertEqual(str(raised.exception), "That history entry was not found.")
+                self.assertEqual(session.calls, [])
 
-    def test_analysis_uses_the_mvp_endpoint_and_long_timeout(self):
-        """Send the MVP payload with the longer end-to-end analysis timeout."""
+    def test_malformed_error_response_uses_the_generic_safe_error(self):
+        """Never surface an untrusted error response payload to the dashboard."""
 
-        session = FakeSession()
-        report = request_analysis(
-            "https://example.com/product",
-            "groq",
-            "http://127.0.0.1:8000/",
-            session=session,
+        session = FakeSession(post_responses={
+            "http://127.0.0.1:8000/api/collect": MalformedResponse(None, status_code=500, content_type="text/html")
+        })
+        with self.assertRaises(ApiClientError) as raised:
+            request_collection("https://example.com", "http://127.0.0.1:8000", session=session)
+        self.assertEqual(raised.exception.code, "analysis_failed")
+        self.assertEqual(str(raised.exception), "The request could not be completed.")
+
+    def test_success_shape_mismatch_uses_the_generic_invalid_response_error(self):
+        """Reject successful payloads that do not match each endpoint contract."""
+
+        cases = (
+            (lambda session: request_collection("https://example.com", "http://127.0.0.1:8000", session=session), FakeSession(post_responses={"http://127.0.0.1:8000/api/collect": FakeResponse([])})),
+            (lambda session: request_demo("http://127.0.0.1:8000", session=session), FakeSession(get_responses={"http://127.0.0.1:8000/api/demo": FakeResponse([])})),
+            (lambda session: request_analysis({"source": {}, "reviews": []}, "http://127.0.0.1:8000", session=session), FakeSession(post_responses={"http://127.0.0.1:8000/api/analyze": FakeResponse([])})),
+            (lambda session: request_history("http://127.0.0.1:8000", session=session), FakeSession(get_responses={"http://127.0.0.1:8000/api/history": FakeResponse(["not-an-object"])})),
+            (lambda session: request_history_report(1, "http://127.0.0.1:8000", session=session), FakeSession(get_responses={"http://127.0.0.1:8000/api/history/1": FakeResponse([])})),
         )
-        self.assertEqual(report["metrics"]["review_count"], 3)
-        self.assertEqual(
-            session.post_call,
-            (
-                "http://127.0.0.1:8000/api/analyze",
-                {"url": "https://example.com/product", "provider": "groq"},
-                45,
-            ),
-        )
+        for request, session in cases:
+            with self.subTest(request=request):
+                with self.assertRaises(ApiClientError) as raised:
+                    request(session)
+                self.assertEqual(raised.exception.code, "analysis_failed")
+                self.assertEqual(str(raised.exception), "The backend returned an invalid response.")
 
 
 class DashboardFormattingTests(unittest.TestCase):
