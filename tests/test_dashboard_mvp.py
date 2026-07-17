@@ -24,6 +24,7 @@ from dashboard.streamlit_app import (
     rating_rows,
     review_rows,
     safe_badge_markup,
+    safe_theme_card_markup,
     sentiment_rows,
     sentiment_visual,
 )
@@ -402,6 +403,23 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertNotIn("<script>", markup)
         self.assertIn("&lt;script&gt;", markup)
         self.assertIn("✅", markup)
+
+    def test_theme_card_markup_uses_a_semantic_card_and_escapes_all_live_content(self):
+        """Render every live theme field inside the semantic card rather than a bare badge."""
+
+        markup = safe_theme_card_markup(
+            sentiment_visual("negative"),
+            "<script>theme</script>",
+            "<b>description</b>",
+            "<em>7</em>",
+        )
+        self.assertIn('class="ri-card ri-negative"', markup)
+        self.assertIn("⚠️ Negative", markup)
+        self.assertIn("&lt;script&gt;theme&lt;/script&gt;", markup)
+        self.assertIn("&lt;b&gt;description&lt;/b&gt;", markup)
+        self.assertIn("&lt;em&gt;7&lt;/em&gt; mentions", markup)
+        self.assertNotIn("<script>", markup)
+        self.assertIn("safe_theme_card_markup(visual, title, description, mentions)", inspect.getsource(streamlit_app))
 
     def test_history_option_exposes_source_time_sentiment_and_demo_status(self):
         """Make stored history provenance recognizable without loading its report."""

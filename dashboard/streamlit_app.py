@@ -193,6 +193,22 @@ def safe_badge_markup(visual: SentimentVisual, label: str) -> str:
     )
 
 
+def safe_theme_card_markup(visual: SentimentVisual, name: str, description: str, mentions: Any) -> str:
+    """Build one escaped semantic theme card from live analysis content."""
+
+    safe_visual = sentiment_visual(visual.semantic)
+    return (
+        f'<section class="ri-card ri-{safe_visual.semantic}" style="color:{safe_visual.foreground};'
+        f'background:{safe_visual.background};border-color:{safe_visual.border}">'
+        f'<span class="ri-badge ri-{safe_visual.semantic}">{safe_visual.icon} '
+        f'{html.escape(safe_visual.label)}</span>'
+        f'<strong>{html.escape(name)}</strong>'
+        f'<p>{html.escape(description)}</p>'
+        f'<small>{html.escape(str(mentions))} mentions</small>'
+        "</section>"
+    )
+
+
 def _configure_page() -> None:
     """Apply page metadata and the concise responsive token system."""
 
@@ -257,8 +273,7 @@ def _render_themes(themes: list[dict[str, Any]]) -> None:
         title = str(theme.get("name", "Unnamed theme"))
         description = str(theme.get("description", ""))
         mentions = theme.get("mentions", 0)
-        st.markdown(safe_badge_markup(visual, f"{visual.label}: {title}"), unsafe_allow_html=True)
-        st.caption(f"{description} · {mentions} mentions")
+        st.markdown(safe_theme_card_markup(visual, title, description, mentions), unsafe_allow_html=True)
 
 
 def _render_report(report: dict[str, Any], collection: dict[str, Any]) -> None:
