@@ -128,8 +128,21 @@ def run(
     backend_command, dashboard_command = build_commands(python_executable)
     try:
         backend = popen(backend_command, cwd=PROJECT_ROOT)
-        dashboard = popen(dashboard_command, cwd=PROJECT_ROOT)
         startup_started = monotonic()
+
+        while True:
+            returncode = backend.poll()
+            if returncode is not None:
+                return returncode or 1
+            if backend_ready():
+                break
+            startup_elapsed = monotonic() - startup_started
+            if startup_elapsed >= STARTUP_TIMEOUT_SECONDS:
+                report("The application did not become ready within 30 seconds.")
+                return 1
+            sleep(POLL_INTERVAL_SECONDS)
+
+        dashboard = popen(dashboard_command, cwd=PROJECT_ROOT)
         application_ready = False
         browser_attempted = False
         # Either peer is required for the app, so an early exit ends supervision
@@ -139,7 +152,7 @@ def run(
                 returncode = process.poll()
                 if returncode is not None:
                     return returncode or 1
-            if not browser_attempted and backend_ready() and dashboard_ready():
+            if not browser_attempted and dashboard_ready():
                 application_ready = True
                 browser_attempted = True
                 try:
