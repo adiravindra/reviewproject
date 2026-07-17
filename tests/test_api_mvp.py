@@ -391,13 +391,24 @@ class ApiTests(unittest.TestCase):
             self.assertNotIn(marker, response.text)
 
     def test_malformed_collection_url_is_rejected_before_collector_work(self):
-        """Let request validation reject malformed URLs before any network collection begins."""
+        """Return only the safe invalid-URL envelope before collector work."""
 
         collector = Mock(return_value=sample_collection())
+        marker = "submitted-invalid-url-marker"
         response = TestClient(create_app(collector=collector, history_store=FakeHistoryStore())).post(
-            "/api/collect", json={"url": "not a url"}
+            "/api/collect", json={"url": marker}
         )
         self.assertEqual(response.status_code, 422)
+        self.assertEqual(
+            response.json(),
+            {
+                "detail": {
+                    "code": "invalid_url",
+                    "message": "Use a public http or https review-page URL.",
+                }
+            },
+        )
+        self.assertNotIn(marker, response.text)
         collector.assert_not_called()
 
     def test_unknown_and_demo_failures_use_generic_safe_messages(self):
@@ -476,6 +487,13 @@ class ApiContractTests(unittest.TestCase):
 
         error = PublicError(code="history_not_found", message="That history entry was not found.")
         self.assertEqual(error.code, "history_not_found")
+
+    def test_public_error_accepts_all_collection_error_codes(self):
+        """Declare each collection failure the API can safely return."""
+
+        for code in ("malformed_json_ld", "site_blocked", "collection_timeout"):
+            with self.subTest(code=code):
+                self.assertEqual(PublicError(code=code, message="Safe message.").code, code)
 
     def test_history_item_preserves_safe_source_summary_metadata(self):
         """Represent history navigation without retaining arbitrary provider content."""

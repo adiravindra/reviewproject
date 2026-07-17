@@ -1,6 +1,9 @@
 """Expose collection, analysis, demo, and local history through safe API routes."""
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from backend.app.collector import CollectionError, collect_reviews
 from backend.app.demo import load_demo_collection
@@ -100,6 +103,18 @@ def create_app(
 
     app = FastAPI(title="ReviewInsight MVP")
     store = history_store if history_store is not None else HistoryStore()
+
+    @app.exception_handler(RequestValidationError)
+    async def collection_validation_error(request: Request, error: RequestValidationError):
+        """Hide invalid collection input details behind the documented URL envelope."""
+
+        if request.url.path == "/api/collect":
+            status_code, message = COLLECTION_ERRORS["invalid_url"]
+            return JSONResponse(
+                status_code=status_code,
+                content={"detail": {"code": "invalid_url", "message": message}},
+            )
+        return await request_validation_exception_handler(request, error)
 
     @app.get("/health")
     def health():
