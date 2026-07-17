@@ -1,9 +1,14 @@
-"""Orchestrate credential, collection, agent, and deterministic metric stages."""
+"""Orchestrate credential, agent, and deterministic metric stages."""
 
 from backend.app.analyzer import analyze_reviews
-from backend.app.collector import collect_reviews
-from backend.app.credentials import validate_provider_credentials
-from backend.app.models import AnalysisResponse, Metrics, Provider, Review, ReviewSentiment
+from backend.app.credentials import validate_groq_credentials
+from backend.app.models import (
+    AnalysisResponse,
+    CollectionResult,
+    Metrics,
+    Review,
+    ReviewSentiment,
+)
 
 
 def calculate_metrics(reviews: list[Review], sentiments: list[ReviewSentiment]) -> Metrics:
@@ -29,20 +34,17 @@ def calculate_metrics(reviews: list[Review], sentiments: list[ReviewSentiment]) 
 
 
 def run_analysis(
-    url: str,
-    provider: Provider,
+    collection: CollectionResult,
     *,
-    credential_validator=validate_provider_credentials,
-    collector=collect_reviews,
+    credential_validator=validate_groq_credentials,
     analyzer=analyze_reviews,
 ) -> AnalysisResponse:
-    """Run preflight first, then collect and analyze evidence into one response."""
+    """Validate Groq and analyze one previously collected evidence set."""
 
     # Credential preflight is deliberately first: invalid credentials must stop
-    # before network collection and before any generative provider invocation.
-    credential_validator(provider)
-    collection = collector(url)
-    insights = analyzer(collection.reviews, provider)
+    # before any generative provider invocation or deterministic metric work.
+    credential_validator()
+    insights = analyzer(collection.reviews)
     metrics = calculate_metrics(collection.reviews, insights.review_sentiments)
     return AnalysisResponse(
         source=collection.source,

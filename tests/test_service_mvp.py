@@ -1,10 +1,9 @@
-"""Test deterministic metrics and ordered end-to-end service orchestration."""
+"""Test deterministic metrics and staged collection-analysis orchestration."""
 
 import os
 import unittest
 from unittest.mock import Mock, patch
 
-from backend.app.credentials import validate_provider_credentials
 from backend.app.errors import AnalysisError
 from backend.app.models import AgentInsights, CollectionResult, Review, ReviewSentiment, SourceInfo
 from backend.app.service import calculate_metrics, run_analysis
@@ -38,6 +37,7 @@ def sample_collection():
             url="https://example.com/product",
             title="Everyday Headphones",
             extractor="json_ld",
+            is_demo=False,
         ),
         reviews=sample_reviews(),
     )
@@ -54,6 +54,7 @@ def sample_insights():
                 "name": "Daily performance",
                 "description": "Customers focus on sound, comfort, battery, and microphone quality.",
                 "mentions": 3,
+                "sentiment": "positive",
             }
         ],
         strengths=["Clear sound", "Comfortable fit"],
@@ -94,94 +95,98 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(metrics.positive_percentage, 0.0)
         self.assertEqual(metrics.rating_distribution, {str(star): 0 for star in range(1, 6)})
 
-    def test_pipeline_calls_each_stage_once_and_returns_contract(self):
-        """Run every stage once in order and assemble the response schema."""
+    def test_pipeline_validates_then_analyzes_exact_collection_once(self):
+        """Validate Groq once before analyzing exactly the submitted evidence."""
 
         events = []
-        credential_validator = Mock(
-            side_effect=lambda provider: events.append(("validate", provider))
-        )
-        collector = Mock(
-            side_effect=lambda url: (
-                events.append(("collect", url)),
-                sample_collection(),
-            )[1]
-        )
+        collection = sample_collection()
+        credential_validator = Mock(side_effect=lambda: events.append("validate"))
         analyzer = Mock(
-            side_effect=lambda reviews, provider: (
-                events.append(("analyze", provider)),
+            side_effect=lambda reviews: (
+                events.append("analyze"),
                 sample_insights(),
             )[1]
         )
         result = run_analysis(
-            "https://example.com/product",
-            "google",
+            collection,
             credential_validator=credential_validator,
-            collector=collector,
             analyzer=analyzer,
         )
-        credential_validator.assert_called_once_with("google")
-        collector.assert_called_once_with("https://example.com/product")
-        analyzer.assert_called_once_with(sample_collection().reviews, "google")
-        self.assertEqual(
-            events,
-            [
-                ("validate", "google"),
-                ("collect", "https://example.com/product"),
-                ("analyze", "google"),
-            ],
-        )
-        self.assertEqual(result.source.title, "Everyday Headphones")
+        credential_validator.assert_called_once_with()
+        analyzer.assert_called_once_with(collection.reviews)
+        self.assertEqual(events, ["validate", "analyze"])
+        self.assertIs(result.source, collection.source)
         self.assertEqual(result.metrics.review_count, 3)
-        self.assertEqual(result.reviews, sample_collection().reviews)
+        self.assertEqual(result.reviews, collection.reviews)
+        self.assertIsNone(result.history_id)
 
-    def test_credentials_are_validated_before_collection(self):
-        """Stop collection and analysis when credential preflight rejects a key."""
+    def test_credential_failure_stops_analyzer_and_metrics(self):
+        """Stop all downstream analysis work when Groq preflight rejects a key."""
 
-        events = []
+        def validate():
+            """Simulate a Groq credential rejection."""
 
-        def validate(provider):
-            """Record preflight and simulate a selected credential rejection."""
-
-            events.append(("validate", provider))
             raise AnalysisError("invalid_api_key", "The selected credential is invalid.")
 
-        collector = Mock(side_effect=lambda url: events.append(("collect", url)))
         analyzer = Mock()
         with self.assertRaises(AnalysisError):
             run_analysis(
-                "https://example.com/product",
-                "google",
+                sample_collection(),
                 credential_validator=validate,
-                collector=collector,
                 analyzer=analyzer,
             )
-        self.assertEqual(events, [("validate", "google")])
-        collector.assert_not_called()
         analyzer.assert_not_called()
 
-    def test_missing_selected_key_stops_before_collection(self):
-        """Reject a missing selected key before the collector can make a request."""
+    def test_blank_groq_key_stops_before_analyzer_or_http_call(self):
+        """Use the real preflight to reject a blank key before analysis begins."""
 
-        collector = Mock()
         analyzer = Mock()
-        with patch.dict(
-            os.environ,
-            {"GOOGLE_API_KEY": "   ", "GROQ_API_KEY": "unselected-key"},
-            clear=True,
-        ):
-            with self.assertRaises(AnalysisError) as raised:
-                run_analysis(
-                    "https://example.com/product",
-                    "google",
-                    credential_validator=validate_provider_credentials,
-                    collector=collector,
-                    analyzer=analyzer,
-                )
+        with patch("backend.app.credentials.requests.get") as request_get:
+            with patch.dict(
+                os.environ,
+                {"GROQ_API_KEY": "   "},
+                clear=True,
+            ):
+                with self.assertRaises(AnalysisError) as raised:
+                    run_analysis(
+                        sample_collection(),
+                        analyzer=analyzer,
+                    )
 
         self.assertEqual(raised.exception.code, "missing_api_key")
-        collector.assert_not_called()
+        request_get.assert_not_called()
         analyzer.assert_not_called()
+
+    def test_demo_collection_metadata_is_preserved(self):
+        """Keep URL-less demo provenance intact across the analysis boundary."""
+
+        collection = CollectionResult(
+            source=SourceInfo(
+                url=None,
+                title="Demo reviews",
+                extractor="demo",
+                is_demo=True,
+            ),
+            reviews=sample_reviews(),
+        )
+        result = run_analysis(
+            collection,
+            credential_validator=lambda: None,
+            analyzer=lambda reviews: sample_insights(),
+        )
+        self.assertIs(result.source, collection.source)
+        self.assertIsNone(result.source.url)
+        self.assertEqual(result.source.extractor, "demo")
+        self.assertTrue(result.source.is_demo)
+
+    def test_service_has_no_collection_or_provider_orchestration(self):
+        """Keep collection and provider selection out of the staged service."""
+
+        with open("backend/app/service.py", encoding="utf-8") as service_file:
+            service_source = service_file.read()
+        self.assertNotIn("Provider", service_source)
+        self.assertNotIn("collect_reviews", service_source)
+        self.assertNotIn("url: str", service_source)
 
 
 if __name__ == "__main__":
