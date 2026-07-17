@@ -234,8 +234,33 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 500)
         self.assertEqual(
             response.json(),
-            {"detail": {"code": "history_failed", "message": "Local history could not be updated."}},
+            {
+                "detail": {
+                    "code": "history_failed",
+                    "message": "Local analysis history could not be updated.",
+                }
+            },
         )
+
+    def test_raw_history_save_failure_uses_the_safe_history_envelope(self):
+        """Treat unexpected persistence exceptions as local history failures, never analysis errors."""
+
+        marker = "database password raw storage traceback"
+        history = FakeHistoryStore(saved_id=RuntimeError(marker))
+        response = TestClient(
+            create_app(analysis_service=Mock(return_value=sample_response()), history_store=history)
+        ).post("/api/analyze", json=sample_collection_payload())
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.json(),
+            {
+                "detail": {
+                    "code": "history_failed",
+                    "message": "Local analysis history could not be updated.",
+                }
+            },
+        )
+        self.assertNotIn(marker, response.text)
 
     def test_history_list_returns_safe_newest_first_summaries(self):
         """Forward only the already-safe ordering and fields supplied by history storage."""
@@ -286,23 +311,23 @@ class ApiTests(unittest.TestCase):
 
         marker = "Authorization: Bearer fake-secret; raw page body"
         cases = [
-            ("invalid_url", 422),
-            ("no_reviews", 422),
-            ("malformed_json_ld", 422),
-            ("site_blocked", 502),
-            ("collection_timeout", 504),
-            ("collection_failed", 502),
+            ("invalid_url", 422, "Use a public http or https review-page URL."),
+            ("no_reviews", 422, "At least two public reviews are required."),
+            ("malformed_json_ld", 422, "Review data on this page is malformed and could not be read."),
+            ("site_blocked", 502, "The website blocked automated access. Try another public review page."),
+            ("collection_timeout", 504, "The website took too long to respond. Try again or use another page."),
+            ("collection_failed", 502, "The page could not be read. Try another public review page."),
         ]
-        for code, expected_status in cases:
+        for code, expected_status, expected_message in cases:
             with self.subTest(code=code):
-                error = CollectionError(code, f"Safe {code} message.")
+                error = CollectionError(code, marker)
                 error.__cause__ = RuntimeError(marker)
                 response = TestClient(
                     create_app(collector=Mock(side_effect=error), history_store=FakeHistoryStore())
                 ).post("/api/collect", json={"url": "https://example.com/product"})
                 self.assertEqual(response.status_code, expected_status)
                 self.assertEqual(
-                    response.json(), {"detail": {"code": code, "message": error.public_message}}
+                    response.json(), {"detail": {"code": code, "message": expected_message}}
                 )
                 self.assertNotIn(marker, response.text)
 
@@ -311,16 +336,20 @@ class ApiTests(unittest.TestCase):
 
         marker = "Authorization: Bearer fake-secret; raw provider response"
         cases = [
-            ("missing_api_key", 400),
-            ("invalid_api_key", 401),
-            ("groq_unavailable", 503),
-            ("analysis_failed", 502),
-            ("model_output_invalid", 502),
-            ("history_failed", 500),
+            ("missing_api_key", 400, "Set GROQ_API_KEY before analyzing reviews."),
+            ("invalid_api_key", 401, "Groq rejected the configured credential. Check the key and its permissions."),
+            (
+                "groq_unavailable",
+                503,
+                "Groq credentials could not be validated. Analysis did not start; try again when Groq is reachable.",
+            ),
+            ("analysis_failed", 502, "The analysis could not be completed."),
+            ("model_output_invalid", 502, "The AI analysis returned an invalid result."),
+            ("history_failed", 500, "Local analysis history could not be updated."),
         ]
-        for code, expected_status in cases:
+        for code, expected_status, expected_message in cases:
             with self.subTest(code=code):
-                error = AnalysisError(code, f"Safe {code} message.")
+                error = AnalysisError(code, marker)
                 error.__cause__ = RuntimeError(marker)
                 if code == "history_failed":
                     history = FakeHistoryStore(saved_id=error)
@@ -330,9 +359,36 @@ class ApiTests(unittest.TestCase):
                 response = TestClient(app).post("/api/analyze", json=sample_collection_payload())
                 self.assertEqual(response.status_code, expected_status)
                 self.assertEqual(
-                    response.json(), {"detail": {"code": code, "message": error.public_message}}
+                    response.json(), {"detail": {"code": code, "message": expected_message}}
                 )
                 self.assertNotIn(marker, response.text)
+
+    def test_unknown_domain_error_codes_and_messages_are_generic(self):
+        """Do not echo unallowlisted codes or messages from injected domain boundaries."""
+
+        marker = "unreviewed-code configured secret"
+        collection = TestClient(
+            create_app(
+                collector=Mock(side_effect=CollectionError("unreviewed_code", marker)),
+                history_store=FakeHistoryStore(),
+            )
+        ).post("/api/collect", json={"url": "https://example.com/product"})
+        analysis = TestClient(
+            create_app(
+                analysis_service=Mock(side_effect=AnalysisError("unreviewed_code", marker)),
+                history_store=FakeHistoryStore(),
+            )
+        ).post("/api/analyze", json=sample_collection_payload())
+        expected = {
+            "detail": {
+                "code": "analysis_failed",
+                "message": "The analysis could not be completed.",
+            }
+        }
+        for response in (collection, analysis):
+            self.assertEqual(response.status_code, 500)
+            self.assertEqual(response.json(), expected)
+            self.assertNotIn(marker, response.text)
 
     def test_malformed_collection_url_is_rejected_before_collector_work(self):
         """Let request validation reject malformed URLs before any network collection begins."""

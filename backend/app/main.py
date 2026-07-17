@@ -18,41 +18,76 @@ from backend.app.service import run_analysis
 
 # Stable status mappings let clients distinguish user-correctable credentials,
 # transient providers, and upstream analysis failures without internal details.
-ANALYSIS_STATUS_CODES = {
-    "missing_api_key": 400,
-    "invalid_api_key": 401,
-    "groq_unavailable": 503,
-    "analysis_failed": 502,
-    "model_output_invalid": 502,
-    "history_failed": 500,
+ANALYSIS_ERRORS = {
+    "missing_api_key": (400, "Set GROQ_API_KEY before analyzing reviews."),
+    "invalid_api_key": (401, "Groq rejected the configured credential. Check the key and its permissions."),
+    (
+        "groq_unavailable"
+    ): (
+        503,
+        "Groq credentials could not be validated. Analysis did not start; try again when Groq is reachable.",
+    ),
+    "analysis_failed": (502, "The analysis could not be completed."),
+    "model_output_invalid": (502, "The AI analysis returned an invalid result."),
+    "history_failed": (500, "Local analysis history could not be updated."),
 }
 
-COLLECTION_STATUS_CODES = {
-    "invalid_url": 422,
-    "no_reviews": 422,
-    "malformed_json_ld": 422,
-    "site_blocked": 502,
-    "collection_timeout": 504,
-    "collection_failed": 502,
+COLLECTION_ERRORS = {
+    "invalid_url": (422, "Use a public http or https review-page URL."),
+    "no_reviews": (422, "At least two public reviews are required."),
+    "malformed_json_ld": (422, "Review data on this page is malformed and could not be read."),
+    "site_blocked": (502, "The website blocked automated access. Try another public review page."),
+    "collection_timeout": (504, "The website took too long to respond. Try again or use another page."),
+    "collection_failed": (502, "The page could not be read. Try another public review page."),
+}
+
+GENERIC_ANALYSIS_DETAIL = {
+    "code": "analysis_failed",
+    "message": "The analysis could not be completed.",
+}
+
+HISTORY_FAILURE_DETAIL = {
+    "code": "history_failed",
+    "message": "Local analysis history could not be updated.",
 }
 
 
 def _collection_http_error(error: CollectionError) -> HTTPException:
     """Convert a known collector failure into its small public envelope."""
 
+    mapped = COLLECTION_ERRORS.get(error.code)
+    if mapped is None:
+        return _generic_analysis_http_error()
+    status_code, message = mapped
     return HTTPException(
-        status_code=COLLECTION_STATUS_CODES.get(error.code, 502),
-        detail={"code": error.code, "message": error.public_message},
+        status_code=status_code,
+        detail={"code": error.code, "message": message},
     )
 
 
 def _analysis_http_error(error: AnalysisError) -> HTTPException:
     """Convert a known analysis or history failure into its small public envelope."""
 
+    mapped = ANALYSIS_ERRORS.get(error.code)
+    if mapped is None:
+        return _generic_analysis_http_error()
+    status_code, message = mapped
     return HTTPException(
-        status_code=ANALYSIS_STATUS_CODES.get(error.code, 502),
-        detail={"code": error.code, "message": error.public_message},
+        status_code=status_code,
+        detail={"code": error.code, "message": message},
     )
+
+
+def _generic_analysis_http_error() -> HTTPException:
+    """Return the one generic envelope permitted for unexpected API failures."""
+
+    return HTTPException(status_code=500, detail=GENERIC_ANALYSIS_DETAIL)
+
+
+def _history_failure_http_error() -> HTTPException:
+    """Return the stable envelope used when local history persistence fails."""
+
+    return HTTPException(status_code=500, detail=HISTORY_FAILURE_DETAIL)
 
 
 def create_app(
@@ -81,13 +116,7 @@ def create_app(
         except CollectionError as error:
             raise _collection_http_error(error) from None
         except Exception:
-            raise HTTPException(
-                status_code=500,
-                detail={
-                    "code": "analysis_failed",
-                    "message": "The analysis could not be completed.",
-                },
-            ) from None
+            raise _generic_analysis_http_error() from None
 
     @app.get("/api/demo", response_model=CollectionResult)
     def demo():
@@ -110,20 +139,20 @@ def create_app(
 
         try:
             report = analysis_service(request.to_collection())
-            saved_id = store.save(report)
-            return report.model_copy(update={"history_id": saved_id})
         except CollectionError as error:
             raise _collection_http_error(error) from None
         except AnalysisError as error:
             raise _analysis_http_error(error) from None
         except Exception:
-            raise HTTPException(
-                status_code=500,
-                detail={
-                    "code": "analysis_failed",
-                    "message": "The analysis could not be completed.",
-                },
-            ) from None
+            raise _generic_analysis_http_error() from None
+
+        try:
+            saved_id = store.save(report)
+        except AnalysisError as error:
+            raise _analysis_http_error(error) from None
+        except Exception:
+            raise _history_failure_http_error() from None
+        return report.model_copy(update={"history_id": saved_id})
 
     @app.get("/api/history", response_model=list[HistoryItem])
     def history():
@@ -134,13 +163,7 @@ def create_app(
         except AnalysisError as error:
             raise _analysis_http_error(error) from None
         except Exception:
-            raise HTTPException(
-                status_code=500,
-                detail={
-                    "code": "analysis_failed",
-                    "message": "The analysis could not be completed.",
-                },
-            ) from None
+            raise _generic_analysis_http_error() from None
 
     @app.get("/api/history/{run_id}", response_model=AnalysisResponse)
     def history_entry(run_id: int):
@@ -162,13 +185,7 @@ def create_app(
         except AnalysisError as error:
             raise _analysis_http_error(error) from None
         except Exception:
-            raise HTTPException(
-                status_code=500,
-                detail={
-                    "code": "analysis_failed",
-                    "message": "The analysis could not be completed.",
-                },
-            ) from None
+            raise _generic_analysis_http_error() from None
 
     return app
 
