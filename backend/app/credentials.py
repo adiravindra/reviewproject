@@ -1,88 +1,55 @@
-"""Validate provider credentials without generating AI output."""
+"""Validate the Groq credential without generating AI output."""
 
 import os
-from dataclasses import dataclass
 
 import requests
 
 from backend.app.errors import AnalysisError
-from backend.app.models import Provider
 
-# Credential checks should fail quickly before collection or paid model work;
-# the tuple bounds connection setup separately from response waiting.
+
+# Credential checks fail quickly before collection or paid model work; the
+# tuple bounds connection setup separately from response waiting.
+GROQ_API_KEY_VARIABLE = "GROQ_API_KEY"
+GROQ_MODELS_ENDPOINT = "https://api.groq.com/openai/v1/models"
 VALIDATION_TIMEOUT = (3, 5)
 
 
-@dataclass(frozen=True)
-class CredentialConfig:
-    """Describe one provider's secret location and authentication request."""
+def get_groq_api_key() -> str:
+    """Return the normalized Groq credential or raise a safe public error."""
 
-    display_name: str
-    environment_variable: str
-    endpoint: str
-    header_name: str
-    header_prefix: str = ""
-
-
-# Provider-specific constants centralize secret names and non-generative model
-# listing endpoints so preflight cannot accidentally prompt either provider.
-PROVIDER_CREDENTIALS = {
-    "google": CredentialConfig(
-        "Gemini",
-        "GOOGLE_API_KEY",
-        "https://generativelanguage.googleapis.com/v1beta/models",
-        "x-goog-api-key",
-    ),
-    "groq": CredentialConfig(
-        "Groq",
-        "GROQ_API_KEY",
-        "https://api.groq.com/openai/v1/models",
-        "Authorization",
-        "Bearer ",
-    ),
-}
-
-
-def get_provider_api_key(provider: Provider) -> str:
-    """Return the selected provider's normalized credential or fail safely."""
-
-    config = PROVIDER_CREDENTIALS[provider]
-    api_key = os.getenv(config.environment_variable, "").strip()
+    api_key = os.getenv(GROQ_API_KEY_VARIABLE, "").strip()
     if not api_key:
         raise AnalysisError(
-            "missing_api_key",
-            f"Set {config.environment_variable} before using {config.display_name}.",
+            "missing_api_key", "Set GROQ_API_KEY before analyzing reviews."
         )
     return api_key
 
 
-def validate_provider_credentials(provider: Provider, *, session=requests) -> None:
-    """Require the selected key and map non-generative preflight status safely."""
-    config = PROVIDER_CREDENTIALS[provider]
-    api_key = get_provider_api_key(provider)
+def validate_groq_credentials(*, session=requests) -> None:
+    """Check Groq model access and map its status without exposing responses."""
 
+    api_key = get_groq_api_key()
     try:
         response = session.get(
-            config.endpoint,
-            headers={config.header_name: f"{config.header_prefix}{api_key}"},
+            GROQ_MODELS_ENDPOINT,
+            headers={"Authorization": f"Bearer {api_key}"},
             timeout=VALIDATION_TIMEOUT,
         )
     except requests.RequestException:
         raise AnalysisError(
-            "provider_unavailable",
-            f"{config.display_name} credentials could not be validated. Analysis did not start; try again when the provider is reachable.",
+            "groq_unavailable",
+            "Groq credentials could not be validated. Analysis did not start; try again when Groq is reachable.",
         ) from None
 
-    # Only status codes influence the result. Provider response bodies are not
-    # inspected or used in decisions because they may contain unstable or
-    # sensitive diagnostics.
+    # Status alone determines the safe outcome. Response bodies can contain
+    # unstable or sensitive diagnostics and must never cross this boundary.
     if response.status_code in {400, 401, 403}:
         raise AnalysisError(
             "invalid_api_key",
-            f"{config.display_name} rejected the configured credential. Check the key and its permissions.",
+            "Groq rejected the configured credential. Check the key and its permissions.",
         )
     if response.status_code < 200 or response.status_code >= 300:
         raise AnalysisError(
-            "provider_unavailable",
-            f"{config.display_name} credentials could not be validated. Analysis did not start; try again when the provider is reachable.",
+            "groq_unavailable",
+            "Groq credentials could not be validated. Analysis did not start; try again when Groq is reachable.",
         )

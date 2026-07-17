@@ -1,35 +1,39 @@
-"""Test non-generative credential preflight and sanitized status mapping."""
+"""Test Groq credential preflight and sanitized status mapping."""
 
 import os
-import sys
 import unittest
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import requests
 
-from backend.app.analyzer import build_model
-from backend.app.credentials import validate_provider_credentials
+from backend.app.credentials import (
+    GROQ_API_KEY_VARIABLE,
+    GROQ_MODELS_ENDPOINT,
+    VALIDATION_TIMEOUT,
+    get_groq_api_key,
+    validate_groq_credentials,
+)
 from backend.app.errors import AnalysisError
 
 
 class FakeResponse:
-    """Simulate provider status and potentially sensitive body content."""
+    """Simulate a Groq status and potentially sensitive response body."""
 
     def __init__(self, status_code, *, text=""):
-        """Store the response fields needed to verify body-independent mapping."""
+        """Store response values used to verify body-independent mapping."""
 
         self.status_code = status_code
         self.text = text
 
 
 class FakeSession:
-    """Simulate provider HTTP transport while recording authentication policy."""
+    """Simulate HTTP transport while recording the requested preflight."""
 
     def __init__(self, result):
         """Configure either a fake response or transport exception result."""
 
         self.result = result
+        self.calls = 0
         self.url = None
         self.headers = None
         self.timeout = None
@@ -37,6 +41,7 @@ class FakeSession:
     def get(self, url, *, headers, timeout):
         """Record preflight inputs and produce the configured transport result."""
 
+        self.calls += 1
         self.url = url
         self.headers = headers
         self.timeout = timeout
@@ -46,109 +51,56 @@ class FakeSession:
 
 
 class CredentialTests(unittest.TestCase):
-    """Group provider preflight endpoint, ordering, and safety contracts."""
+    """Group Groq preflight endpoint, ordering, and safety contracts."""
 
-    def test_gemini_uses_non_generative_model_list_endpoint(self):
-        """Validate Gemini via model listing with its header and short timeout."""
-
-        session = FakeSession(FakeResponse(200))
-        with patch.dict(os.environ, {"GOOGLE_API_KEY": "google-secret"}, clear=True):
-            validate_provider_credentials("google", session=session)
-        self.assertEqual(
-            session.url,
-            "https://generativelanguage.googleapis.com/v1beta/models",
-        )
-        self.assertEqual(session.headers, {"x-goog-api-key": "google-secret"})
-        self.assertEqual(session.timeout, (3, 5))
-
-    def test_groq_uses_non_generative_model_list_endpoint(self):
-        """Validate Groq via model listing with bearer authentication."""
+    def test_model_list_uses_bearer_header_timeout_and_trimmed_key(self):
+        """Validate Groq through its model list using the normalized shared key."""
 
         session = FakeSession(FakeResponse(200))
-        with patch.dict(os.environ, {"GROQ_API_KEY": "groq-secret"}, clear=True):
-            validate_provider_credentials("groq", session=session)
-        self.assertEqual(session.url, "https://api.groq.com/openai/v1/models")
+        with patch.dict(os.environ, {GROQ_API_KEY_VARIABLE: "  groq-secret  "}, clear=True):
+            validate_groq_credentials(session=session)
+
+        self.assertEqual(session.url, GROQ_MODELS_ENDPOINT)
         self.assertEqual(session.headers, {"Authorization": "Bearer groq-secret"})
+        self.assertEqual(session.timeout, VALIDATION_TIMEOUT)
 
-    def test_google_preflight_and_model_share_trimmed_selected_key(self):
-        """Pass one normalized Google credential to preflight and construction."""
+    def test_missing_or_blank_key_stops_before_http(self):
+        """Reject unavailable credentials before starting a network request."""
 
-        session = FakeSession(FakeResponse(200))
-        constructor_calls = []
+        for api_key in (None, "", "   "):
+            with self.subTest(api_key=api_key):
+                session = FakeSession(FakeResponse(200))
+                environment = {} if api_key is None else {GROQ_API_KEY_VARIABLE: api_key}
+                with patch.dict(os.environ, environment, clear=True):
+                    with self.assertRaises(AnalysisError) as raised:
+                        validate_groq_credentials(session=session)
+                self.assertEqual(raised.exception.code, "missing_api_key")
+                self.assertEqual(
+                    str(raised.exception), "Set GROQ_API_KEY before analyzing reviews."
+                )
+                self.assertEqual(session.calls, 0)
 
-        class FakeGoogleModel:
-            """Record the explicit Google constructor credential."""
+    def test_get_groq_api_key_returns_a_trimmed_value(self):
+        """Normalize the one credential before any boundary uses it."""
 
-            def __init__(self, **kwargs):
-                """Capture keyword arguments supplied by the model factory."""
+        with patch.dict(os.environ, {GROQ_API_KEY_VARIABLE: "  groq-secret  "}, clear=True):
+            self.assertEqual(get_groq_api_key(), "groq-secret")
 
-                constructor_calls.append(kwargs)
-
-        fake_module = SimpleNamespace(ChatGoogleGenerativeAI=FakeGoogleModel)
-        with (
-            patch.dict(os.environ, {"GOOGLE_API_KEY": "  google-secret  "}, clear=True),
-            patch.dict(sys.modules, {"langchain_google_genai": fake_module}),
-        ):
-            validate_provider_credentials("google", session=session)
-            build_model("google")
-
-        self.assertEqual(session.headers, {"x-goog-api-key": "google-secret"})
-        self.assertIn("google_api_key", constructor_calls[0])
-        self.assertEqual(constructor_calls[0]["google_api_key"], "google-secret")
-
-    def test_groq_preflight_and_model_share_trimmed_selected_key(self):
-        """Pass one normalized Groq credential to preflight and construction."""
-
-        session = FakeSession(FakeResponse(200))
-        constructor_calls = []
-
-        class FakeGroqModel:
-            """Record the explicit Groq constructor credential."""
-
-            def __init__(self, **kwargs):
-                """Capture keyword arguments supplied by the model factory."""
-
-                constructor_calls.append(kwargs)
-
-        fake_module = SimpleNamespace(ChatGroq=FakeGroqModel)
-        with (
-            patch.dict(os.environ, {"GROQ_API_KEY": "  groq-secret  "}, clear=True),
-            patch.dict(sys.modules, {"langchain_groq": fake_module}),
-        ):
-            validate_provider_credentials("groq", session=session)
-            build_model("groq")
-
-        self.assertEqual(session.headers, {"Authorization": "Bearer groq-secret"})
-        self.assertIn("api_key", constructor_calls[0])
-        self.assertEqual(constructor_calls[0]["api_key"], "groq-secret")
-
-    def test_missing_selected_key_stops_before_http(self):
-        """Stop a missing selected credential before making any HTTP request."""
-
-        session = FakeSession(FakeResponse(200))
-        with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaises(AnalysisError) as raised:
-                validate_provider_credentials("google", session=session)
-        self.assertEqual(raised.exception.code, "missing_api_key")
-        self.assertIsNone(session.url)
-
-    def test_provider_rejection_is_safe(self):
-        """Map rejection statuses without exposing credentials or response bodies."""
+    def test_rejection_statuses_are_sanitized(self):
+        """Map rejected credentials without exposing keys or response bodies."""
 
         for status in (400, 401, 403):
             with self.subTest(status=status):
-                session = FakeSession(
-                    FakeResponse(status, text="raw provider secret response")
-                )
-                with patch.dict(os.environ, {"GROQ_API_KEY": "groq-secret"}, clear=True):
+                session = FakeSession(FakeResponse(status, text="raw provider secret response"))
+                with patch.dict(os.environ, {GROQ_API_KEY_VARIABLE: "groq-secret"}, clear=True):
                     with self.assertRaises(AnalysisError) as raised:
-                        validate_provider_credentials("groq", session=session)
+                        validate_groq_credentials(session=session)
                 self.assertEqual(raised.exception.code, "invalid_api_key")
                 self.assertNotIn("groq-secret", str(raised.exception))
                 self.assertNotIn("raw provider", str(raised.exception))
 
-    def test_temporary_or_unknown_failure_is_safe(self):
-        """Map rate, server, and transport failures to sanitized unavailability."""
+    def test_unavailable_statuses_and_transport_failures_are_sanitized(self):
+        """Map outages to a stable code without body, key, or transport details."""
 
         cases = [
             FakeResponse(429, text="quota internals"),
@@ -160,10 +112,10 @@ class CredentialTests(unittest.TestCase):
         for case in cases:
             with self.subTest(case=case):
                 session = FakeSession(case)
-                with patch.dict(os.environ, {"GROQ_API_KEY": "groq-secret"}, clear=True):
+                with patch.dict(os.environ, {GROQ_API_KEY_VARIABLE: "groq-secret"}, clear=True):
                     with self.assertRaises(AnalysisError) as raised:
-                        validate_provider_credentials("groq", session=session)
-                self.assertEqual(raised.exception.code, "provider_unavailable")
+                        validate_groq_credentials(session=session)
+                self.assertEqual(raised.exception.code, "groq_unavailable")
                 message = str(raised.exception)
                 self.assertNotIn("groq-secret", message)
                 for detail in (

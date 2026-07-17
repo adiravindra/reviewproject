@@ -1,8 +1,10 @@
-"""Test evidence-only agent invocation and structured-result safeguards."""
+"""Test evidence-only Groq invocation and structured-result safeguards."""
 
 import json
 import os
+import sys
 import unittest
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 import backend.app.analyzer as analyzer_module
@@ -32,6 +34,7 @@ def valid_insights(review_ids=None):
                 "name": "Everyday audio",
                 "description": "Sound and practical daily use shape the feedback.",
                 "mentions": 2,
+                "sentiment": "positive",
             }
         ],
         strengths=["Clear sound", "Comfortable fit"],
@@ -45,102 +48,179 @@ def valid_insights(review_ids=None):
 
 
 class FakeAgent:
-    """Simulate the single structured agent while recording its invocation."""
+    """Simulate one structured agent invocation while recording its payload."""
 
-    def __init__(self, insights):
-        """Store the structured response returned by the fake invocation."""
+    def __init__(self, result):
+        """Store the result returned by the fake invocation."""
 
-        self.insights = insights
+        self.result = result
         self.invocations = 0
         self.state = None
 
     def invoke(self, state):
-        """Record agent state and return the configured structured response."""
+        """Record agent state and return the configured agent result."""
 
         self.invocations += 1
         self.state = state
-        return {"structured_response": self.insights}
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
 
 
 class AnalyzerTests(unittest.TestCase):
-    """Group regression contracts for model setup and agent analysis."""
+    """Group model setup and structured analysis boundary contracts."""
 
-    def test_missing_provider_key_is_explicit(self):
-        """Require clear missing-key errors without revealing credential values."""
+    def test_build_model_uses_groq_default_and_bounded_options(self):
+        """Construct Groq with the normalized key, default model, and fixed bounds."""
 
-        with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaises(AnalysisError) as raised:
-                build_model("google")
-        self.assertEqual(raised.exception.code, "missing_api_key")
-        self.assertNotIn("GOOGLE_API_KEY=", str(raised.exception))
+        constructor_calls = []
 
-        with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaises(AnalysisError) as raised:
-                build_model("groq")
-        self.assertEqual(raised.exception.code, "missing_api_key")
+        class FakeGroqModel:
+            """Record explicit parameters supplied by the model factory."""
 
-    def test_module_documents_required_lazy_provider_integrations(self):
-        """Describe integrations as required packages loaded only when selected."""
+            def __init__(self, **kwargs):
+                """Capture construction parameters without network activity."""
+
+                constructor_calls.append(kwargs)
+
+        fake_module = SimpleNamespace(ChatGroq=FakeGroqModel)
+        with (
+            patch.dict(os.environ, {"GROQ_API_KEY": "  groq-secret  "}, clear=True),
+            patch.dict(sys.modules, {"langchain_groq": fake_module}),
+        ):
+            build_model()
+
+        self.assertEqual(
+            constructor_calls,
+            [
+                {
+                    "model": "llama-3.3-70b-versatile",
+                    "api_key": "groq-secret",
+                    "temperature": 0,
+                    "timeout": 30,
+                    "max_retries": 0,
+                }
+            ],
+        )
+
+    def test_build_model_allows_the_groq_model_override(self):
+        """Use the configured Groq model while preserving the fixed options."""
+
+        constructor_calls = []
+
+        class FakeGroqModel:
+            """Record explicit parameters supplied by the model factory."""
+
+            def __init__(self, **kwargs):
+                """Capture construction parameters without network activity."""
+
+                constructor_calls.append(kwargs)
+
+        with (
+            patch.dict(
+                os.environ,
+                {"GROQ_API_KEY": "groq-secret", "REVIEWINSIGHT_GROQ_MODEL": "custom-model"},
+                clear=True,
+            ),
+            patch.dict(sys.modules, {"langchain_groq": SimpleNamespace(ChatGroq=FakeGroqModel)}),
+        ):
+            build_model()
+
+        self.assertEqual(constructor_calls[0]["model"], "custom-model")
+        self.assertEqual(constructor_calls[0]["api_key"], "groq-secret")
+
+    def test_build_model_maps_construction_failures_safely(self):
+        """Hide import and constructor failure details behind the public boundary."""
+
+        class FailingGroqModel:
+            """Raise a representative dependency error during construction."""
+
+            def __init__(self, **kwargs):
+                """Raise sensitive implementation details that must not escape."""
+
+                raise RuntimeError("constructor internals")
+
+        with (
+            patch.dict(os.environ, {"GROQ_API_KEY": "groq-secret"}, clear=True),
+            patch.dict(sys.modules, {"langchain_groq": SimpleNamespace(ChatGroq=FailingGroqModel)}),
+            self.assertRaises(AnalysisError) as raised,
+        ):
+            build_model()
+        self.assertEqual(raised.exception.code, "analysis_failed")
+        self.assertNotIn("constructor internals", str(raised.exception))
+
+    def test_module_documents_only_the_required_lazy_groq_integration(self):
+        """Describe the one required integration as a lazy dependency."""
 
         documentation = analyzer_module.__doc__.lower()
         self.assertIn("required", documentation)
         self.assertIn("lazily", documentation)
+        self.assertIn("groq", documentation)
         self.assertNotIn("optional dependency", documentation)
 
-    def test_one_agent_invocation_returns_validated_insights(self):
-        """Require one tool-free invocation with evidence-only structured output."""
+    def test_one_agent_invocation_returns_validated_evidence_only_insights(self):
+        """Require one tool-free structured call carrying exactly review evidence."""
 
-        fake_agent = FakeAgent(valid_insights())
+        fake_agent = FakeAgent({"structured_response": valid_insights()})
         factory = Mock(return_value=fake_agent)
-        result = analyze_reviews(
-            sample_reviews(),
-            "google",
-            agent_factory=factory,
-            model_factory=lambda provider: object(),
-        )
+        reviews = sample_reviews()
+        result = analyze_reviews(reviews, agent_factory=factory, model_factory=lambda: object())
+
         factory.assert_called_once()
         self.assertEqual(factory.call_args.kwargs["tools"], [])
         self.assertIs(factory.call_args.kwargs["response_format"], AgentInsights)
-        self.assertIn("exactly one sentiment", factory.call_args.kwargs["system_prompt"].lower())
+        self.assertIn("sentiment for every theme", factory.call_args.kwargs["system_prompt"].lower())
         self.assertEqual(fake_agent.invocations, 1)
         self.assertEqual(result.overall_sentiment, "positive")
 
         message = fake_agent.state["messages"][0]
-        payload = json.loads(message["content"])
         self.assertEqual(message["role"], "user")
-        self.assertEqual(set(payload[0]), {"id", "text", "rating", "date"})
-        self.assertEqual(payload[0]["id"], "r1")
+        self.assertEqual(json.loads(message["content"]), [review.model_dump() for review in reviews])
         self.assertNotIn("author", message["content"].lower())
 
-    def test_missing_unknown_or_duplicate_review_sentiment_ids_fail(self):
-        """Reject sentiment results that do not map exactly to submitted IDs."""
+    def test_invocation_failure_is_sanitized(self):
+        """Map invocation failures without exposing raw agent state or details."""
 
-        for review_ids in (["r1"], ["r1", "unknown"], ["r1", "r1"]):
-            with self.subTest(review_ids=review_ids):
-                invalid = valid_insights(review_ids=list(review_ids))
-                with self.assertRaises(AnalysisError) as raised:
-                    analyze_reviews(
-                        sample_reviews(),
-                        "groq",
-                        agent_factory=lambda **kwargs: FakeAgent(invalid),
-                        model_factory=lambda provider: object(),
-                    )
-                self.assertEqual(raised.exception.code, "analysis_failed")
-
-    def test_provider_exception_is_sanitized(self):
-        """Hide provider exception details behind the safe analysis error."""
-
-        agent = Mock()
-        agent.invoke.side_effect = RuntimeError("provider response contained sensitive internals")
+        agent = FakeAgent(RuntimeError("sensitive invocation internals"))
         with self.assertRaises(AnalysisError) as raised:
             analyze_reviews(
-                sample_reviews(),
-                "google",
-                agent_factory=lambda **kwargs: agent,
-                model_factory=lambda provider: object(),
+                sample_reviews(), agent_factory=lambda **kwargs: agent, model_factory=lambda: object()
             )
         self.assertEqual(raised.exception.code, "analysis_failed")
         self.assertNotIn("sensitive", str(raised.exception))
+
+    def test_malformed_or_missing_structured_output_is_invalid(self):
+        """Treat absent and schema-invalid structured output as model output errors."""
+
+        cases = [
+            {},
+            {"structured_response": {"summary": "not a complete result"}},
+            {"structured_response": valid_insights().model_dump() | {"themes": []}},
+        ]
+        for state in cases:
+            with self.subTest(state=state):
+                with self.assertRaises(AnalysisError) as raised:
+                    analyze_reviews(
+                        sample_reviews(),
+                        agent_factory=lambda **kwargs: FakeAgent(state),
+                        model_factory=lambda: object(),
+                    )
+                self.assertEqual(raised.exception.code, "model_output_invalid")
+
+    def test_missing_unknown_or_duplicate_review_ids_are_invalid(self):
+        """Reject review sentiments that do not exactly map to submitted reviews."""
+
+        for review_ids in (["r1"], ["r1", "unknown"], ["r1", "r1"]):
+            with self.subTest(review_ids=review_ids):
+                with self.assertRaises(AnalysisError) as raised:
+                    analyze_reviews(
+                        sample_reviews(),
+                        agent_factory=lambda **kwargs: FakeAgent(
+                            {"structured_response": valid_insights(list(review_ids))}
+                        ),
+                        model_factory=lambda: object(),
+                    )
+                self.assertEqual(raised.exception.code, "model_output_invalid")
 
 
 if __name__ == "__main__":

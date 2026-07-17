@@ -148,7 +148,8 @@ class PublicError(BaseModel):
         "no_reviews",
         "missing_api_key",
         "invalid_api_key",
-        "provider_unavailable",
+        "groq_unavailable",
         "analysis_failed",
+        "model_output_invalid",
     ]
     message: str

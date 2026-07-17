@@ -1,8 +1,7 @@
-"""Produce schema-validated insights from supplied review evidence only.
+"""Produce schema-validated insights through the required lazily loaded Groq integration.
 
-The required provider integrations are imported lazily only when their provider
-is selected. Model construction and invocation errors are converted to the safe
-analysis boundary, and returned sentiment IDs must exactly match input.
+Model construction and invocation errors are converted to the safe analysis
+boundary, and returned sentiment IDs must exactly match input evidence.
 """
 
 import json
@@ -10,9 +9,9 @@ import os
 
 from langchain.agents import create_agent
 
-from backend.app.credentials import get_provider_api_key
+from backend.app.credentials import get_groq_api_key
 from backend.app.errors import AnalysisError
-from backend.app.models import AgentInsights, Provider, Review
+from backend.app.models import AgentInsights, Review
 
 
 # The prompt explicitly forbids outside facts and asks for one structured result;
@@ -21,46 +20,20 @@ SYSTEM_PROMPT = """You analyze customer reviews using only the supplied evidence
 Return the requested structured response without inventing facts or product details.
 Write a concise overall summary and choose overall sentiment from the schema.
 Return 3-6 concise recurring themes with evidence-based descriptions and approximate mention counts.
+Provide a positive, neutral, or negative sentiment for every theme.
 Return no more than five strengths, five weaknesses, and five actionable recommendations.
 For every submitted review ID, return exactly one sentiment entry, with no missing, duplicate, or unknown IDs.
 Use only the sentiment values permitted by the response schema.
 """
 
 
-def build_model(provider: Provider):
-    """Construct the selected chat model behind a sanitized failure boundary."""
+def build_model():
+    """Construct the Groq chat model behind a sanitized failure boundary."""
 
-    if provider == "google":
-        api_key = get_provider_api_key(provider)
-        try:
-            # Load the required integration only when its provider is selected.
-            from langchain_google_genai import ChatGoogleGenerativeAI
-
-            # Stable defaults make behavior reproducible, while environment
-            # overrides permit deliberate model upgrades without a code change.
-            # Zero temperature and one bounded attempt reduce variation and help
-            # keep provider work inside the dashboard's end-to-end time budget.
-            return ChatGoogleGenerativeAI(
-                model=os.getenv("REVIEWINSIGHT_GOOGLE_MODEL", "gemini-2.5-flash-lite"),
-                google_api_key=api_key,
-                temperature=0,
-                timeout=30,
-                max_retries=0,
-            )
-        except AnalysisError:
-            raise
-        except Exception:
-            raise AnalysisError("analysis_failed", "The AI provider could not be initialized.") from None
-
-    if provider != "groq":
-        raise AnalysisError("analysis_failed", "The selected AI provider is not supported.")
-    api_key = get_provider_api_key(provider)
+    api_key = get_groq_api_key()
     try:
-        # Keep provider package loading inside the same construction safeguard.
         from langchain_groq import ChatGroq
 
-        # Groq follows the same configurable-default and bounded-invocation
-        # policy, so switching providers does not change retry or timing semantics.
         return ChatGroq(
             model=os.getenv("REVIEWINSIGHT_GROQ_MODEL", "llama-3.3-70b-versatile"),
             api_key=api_key,
@@ -71,21 +44,20 @@ def build_model(provider: Provider):
     except AnalysisError:
         raise
     except Exception:
-        raise AnalysisError("analysis_failed", "The AI provider could not be initialized.") from None
+        raise AnalysisError(
+            "analysis_failed", "The AI provider could not be initialized."
+        ) from None
 
 
 def analyze_reviews(
     reviews: list[Review],
-    provider: Provider,
     *,
     agent_factory=create_agent,
     model_factory=build_model,
 ) -> AgentInsights:
     """Invoke one tool-free agent and require sentiments for exactly all reviews."""
 
-    model = model_factory(provider)
-    # One invocation returns the entire schema, avoiding divergent multi-agent
-    # summaries and keeping all claims tied to the same submitted evidence.
+    model = model_factory()
     agent = agent_factory(
         model=model,
         tools=[],
@@ -100,16 +72,22 @@ def analyze_reviews(
         state = agent.invoke(
             {"messages": [{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}]}
         )
-        insights = AgentInsights.model_validate(state["structured_response"])
-    except AnalysisError:
-        raise
     except Exception:
         raise AnalysisError("analysis_failed", "The AI analysis could not be completed.") from None
+
+    try:
+        insights = AgentInsights.model_validate(state["structured_response"])
+    except Exception:
+        raise AnalysisError(
+            "model_output_invalid", "The AI analysis returned an invalid result."
+        ) from None
 
     # Schema validation checks shape; this explicit set comparison additionally
     # rejects duplicate, invented, or omitted review identifiers.
     expected = {review.id for review in reviews}
     returned = [item.review_id for item in insights.review_sentiments]
     if len(returned) != len(set(returned)) or set(returned) != expected:
-        raise AnalysisError("analysis_failed", "The AI analysis returned an incomplete result.")
+        raise AnalysisError(
+            "model_output_invalid", "The AI analysis returned an invalid result."
+        )
     return insights
