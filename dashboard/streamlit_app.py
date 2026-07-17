@@ -76,6 +76,17 @@ h2 { letter-spacing: -0.025em; margin-top: 1.4rem; }
 [data-testid="stSidebar"] label,
 [data-testid="stSidebar"] [data-testid="stCaptionContainer"] { color: #ffffff; }
 [data-testid="stSidebar"] .block-container { padding: 1.25rem .85rem; }
+[data-testid="stSidebar"] .stButton > button {
+    color: var(--ri-navy) !important;
+    background: #ffffff !important;
+    border-color: #cbd5e1 !important;
+}
+[data-testid="stSidebar"] .stButton > button p { color: inherit !important; }
+[data-testid="stSidebar"] .stButton > button:hover {
+    color: var(--ri-navy) !important;
+    background: var(--ri-surface-subtle) !important;
+    border-color: #93c5fd !important;
+}
 [data-testid="stForm"] { border: 1px solid var(--ri-border); border-radius: 16px; padding: 1.25rem; }
 div[data-testid="stTextInput"] input { border-color: #cbd5e1; border-radius: 12px; }
 .stButton > button, [data-testid="stFormSubmitButton"] > button {
@@ -144,8 +155,11 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible {
 }
 .ri-metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .ri-insight-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.ri-theme-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-.ri-theme-grid .ri-card { height: 100%; margin: 0; }
+.ri-theme-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ri-theme-grid .ri-card { height: 100%; margin: 0; display: grid; gap: var(--ri-space-2); align-content: start; }
+.ri-theme-grid .ri-badge { width: max-content; max-width: 100%; }
+.ri-theme-grid .ri-card strong { display: block; line-height: 1.4; }
+.ri-theme-grid .ri-card p { margin: 0; }
 .ri-chart-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .ri-metric-card,
 .ri-insight-panel {
@@ -186,6 +200,7 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible {
 .ri-mixed { color: var(--ri-mixed); background: var(--ri-mixed-bg); border-color: var(--ri-mixed-border); }
 @media (max-width: 900px) {
     .ri-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ri-theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .ri-chart-grid { grid-template-columns: 1fr; }
     [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: .7rem; }
     [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
@@ -331,6 +346,79 @@ def rating_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
     return [{"Rating": f"{star} star", "Reviews": int(distribution.get(str(star), 0))} for star in range(1, 6)]
 
 
+def sentiment_chart_spec(report: dict[str, Any]) -> dict[str, Any]:
+    """Build a warning-free sentiment bar spec with explicit semantic colors."""
+
+    domain = ["Positive", "Neutral", "Negative", "Mixed"]
+    colors = [
+        _VISUALS["positive"].foreground,
+        _VISUALS["neutral"].foreground,
+        _VISUALS["negative"].foreground,
+        _VISUALS["mixed"].foreground,
+    ]
+    return {
+        "data": {"values": sentiment_rows(report)},
+        "mark": {"type": "bar", "cornerRadiusTopLeft": 4, "cornerRadiusTopRight": 4},
+        "encoding": {
+            "x": {
+                "field": "Sentiment",
+                "type": "nominal",
+                "sort": domain,
+                "axis": {"title": None, "labelAngle": 0},
+            },
+            "y": {
+                "field": "Reviews",
+                "type": "quantitative",
+                "scale": {"domainMin": 0, "nice": True},
+                "axis": {"title": "Reviews", "tickMinStep": 1},
+            },
+            "color": {
+                "field": "Sentiment",
+                "type": "nominal",
+                "scale": {"domain": domain, "range": colors},
+                "legend": None,
+            },
+            "tooltip": [
+                {"field": "Sentiment", "type": "nominal"},
+                {"field": "Reviews", "type": "quantitative"},
+            ],
+        },
+        "height": 260,
+        "config": {"view": {"stroke": None}},
+    }
+
+
+def rating_chart_spec(report: dict[str, Any]) -> dict[str, Any]:
+    """Build a warning-free royal-blue rating-distribution bar spec."""
+
+    rating_order = [f"{star} star" for star in range(1, 6)]
+    return {
+        "data": {"values": rating_rows(report)},
+        "mark": {"type": "bar", "cornerRadiusTopLeft": 4, "cornerRadiusTopRight": 4},
+        "encoding": {
+            "x": {
+                "field": "Rating",
+                "type": "ordinal",
+                "sort": rating_order,
+                "axis": {"title": None, "labelAngle": 0},
+            },
+            "y": {
+                "field": "Reviews",
+                "type": "quantitative",
+                "scale": {"domainMin": 0, "nice": True},
+                "axis": {"title": "Reviews", "tickMinStep": 1},
+            },
+            "color": {"value": "#2563eb"},
+            "tooltip": [
+                {"field": "Rating", "type": "ordinal"},
+                {"field": "Reviews", "type": "quantitative"},
+            ],
+        },
+        "height": 260,
+        "config": {"view": {"stroke": None}},
+    }
+
+
 def safe_badge_markup(visual: SentimentVisual, label: str) -> str:
     """Build a compact semantic badge while escaping all supplied text."""
 
@@ -385,7 +473,12 @@ def safe_panel_markup(visual: SentimentVisual, heading: Any, items: list[Any]) -
 def _configure_page() -> None:
     """Apply page metadata and the concise responsive token system."""
 
-    st.set_page_config(page_title="Review Intelligence", page_icon="💬", layout="wide")
+    st.set_page_config(
+        page_title="Review Intelligence",
+        page_icon="💬",
+        layout="wide",
+        initial_sidebar_state="auto",
+    )
     st.markdown(f"<style>{DASHBOARD_CSS}</style>", unsafe_allow_html=True)
 
 
@@ -503,11 +596,11 @@ def _render_report(report: dict[str, Any], collection: dict[str, Any]) -> None:
     with chart_columns[0]:
         with st.container(border=True, key="ri_sentiment_chart_card"):
             st.subheader("Sentiment mix")
-            st.bar_chart(sentiment_rows(report), x="Sentiment", y="Reviews")
+            st.vega_lite_chart(spec=sentiment_chart_spec(report), width="stretch", theme=None)
     with chart_columns[1]:
         with st.container(border=True, key="ri_rating_chart_card"):
             st.subheader("Rating distribution")
-            st.bar_chart(rating_rows(report), x="Rating", y="Reviews")
+            st.vega_lite_chart(spec=rating_chart_spec(report), width="stretch", theme=None)
 
     _render_themes(list(insights.get("themes", [])))
     strengths = list(insights.get("strengths", [])) or ["No strengths were returned."]

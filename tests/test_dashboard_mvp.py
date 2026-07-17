@@ -1,10 +1,12 @@
 """Test dashboard client safety, staged flow, and pure formatting helpers."""
 
 import inspect
+import json
 import unittest
 from unittest.mock import patch
 
 import requests
+from streamlit.testing.v1 import AppTest
 
 import dashboard.streamlit_app as streamlit_app
 from dashboard.api_client import (
@@ -497,6 +499,76 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertIn("@media (max-width: 900px)", DASHBOARD_CSS)
         self.assertIn("@media (max-width: 640px)", DASHBOARD_CSS)
 
+    def test_page_configuration_uses_streamlits_mobile_safe_sidebar_state(self):
+        """Let Streamlit collapse the sidebar automatically on narrow screens."""
+
+        with (
+            patch.object(streamlit_app.st, "set_page_config") as set_page_config,
+            patch.object(streamlit_app.st, "markdown"),
+        ):
+            streamlit_app._configure_page()
+
+        set_page_config.assert_called_once_with(
+            page_title="Review Intelligence",
+            page_icon="💬",
+            layout="wide",
+            initial_sidebar_state="auto",
+        )
+
+    def test_sidebar_buttons_have_explicit_readable_contrast(self):
+        """Keep secondary sidebar button text dark against its white surface."""
+
+        selector = '[data-testid="stSidebar"] .stButton > button {'
+        self.assertIn(selector, DASHBOARD_CSS)
+        rule = DASHBOARD_CSS.split(selector, 1)[1].split("}", 1)[0]
+        self.assertIn("color: var(--ri-navy) !important", rule)
+        self.assertIn("background: #ffffff !important", rule)
+        label_selector = '[data-testid="stSidebar"] .stButton > button p {'
+        self.assertIn(label_selector, DASHBOARD_CSS)
+        label_rule = DASHBOARD_CSS.split(label_selector, 1)[1].split("}", 1)[0]
+        self.assertIn("color: inherit !important", label_rule)
+
+    def test_theme_grid_caps_desktop_rows_at_three_and_prevents_badge_collisions(self):
+        """Keep theme cards scan-friendly with separate badge and title rows."""
+
+        self.assertIn(
+            ".ri-theme-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }",
+            DASHBOARD_CSS,
+        )
+        self.assertIn(
+            ".ri-theme-grid .ri-card { height: 100%; margin: 0; display: grid;",
+            DASHBOARD_CSS,
+        )
+        self.assertIn(".ri-theme-grid .ri-badge { width: max-content; max-width: 100%; }", DASHBOARD_CSS)
+        tablet_css = DASHBOARD_CSS.split("@media (max-width: 900px)", 1)[1].split("@media (max-width: 640px)", 1)[0]
+        self.assertIn(".ri-theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }", tablet_css)
+
+    def test_chart_specs_use_semantic_colors_without_warning_prone_bindings(self):
+        """Build deterministic responsive bars without scale-bound interactions or stacking fields."""
+
+        self.assertTrue(hasattr(streamlit_app, "sentiment_chart_spec"))
+        self.assertTrue(hasattr(streamlit_app, "rating_chart_spec"))
+        sentiment_spec = streamlit_app.sentiment_chart_spec(sample_report())
+        rating_spec = streamlit_app.rating_chart_spec(sample_report())
+
+        self.assertEqual(sentiment_spec["mark"]["type"], "bar")
+        self.assertEqual(sentiment_spec["height"], 260)
+        self.assertEqual(
+            sentiment_spec["encoding"]["color"]["scale"],
+            {
+                "domain": ["Positive", "Neutral", "Negative", "Mixed"],
+                "range": ["#15803d", "#a16207", "#b91c1c", "#4f46e5"],
+            },
+        )
+        self.assertEqual(rating_spec["encoding"]["color"]["value"], "#2563eb")
+        for spec in (sentiment_spec, rating_spec):
+            serialized = json.dumps(spec)
+            self.assertNotIn('"params"', serialized)
+            self.assertNotIn('"bind"', serialized)
+            self.assertNotIn("Reviews_start", serialized)
+            self.assertNotIn("Reviews_end", serialized)
+            self.assertEqual(spec["encoding"]["y"]["scale"]["domainMin"], 0)
+
     def test_compact_evidence_keeps_rows_without_repeating_the_section_heading(self):
         """Keep pre-analysis evidence prominent and make only the report duplicate compact."""
 
@@ -613,6 +685,111 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertIn("How it works", source)
         self.assertNotIn('st.header("Extracted reviews (evidence)")', source)
         self.assertNotIn("except BackendUnavailable:\n                st.session_state[\"collection\"] = request_demo", source)
+
+
+class DashboardRuntimeTests(unittest.TestCase):
+    """Verify staged dashboard behavior through Streamlit's retained runtime harness."""
+
+    def test_pre_analysis_runtime_keeps_evidence_visible_without_an_expander(self):
+        """Render collected evidence directly before any report exists."""
+
+        report = sample_report()
+        app = AppTest.from_file(streamlit_app.__file__)
+        app.session_state["collection"] = {"source": report["source"], "reviews": report["reviews"]}
+
+        app.run(timeout=30)
+
+        self.assertEqual(list(app.exception), [])
+        self.assertEqual(len(app.expander), 0)
+        self.assertEqual(len(app.dataframe), 1)
+        self.assertIn("Review evidence", [element.value for element in app.subheader])
+        self.assertIn("Analyze with Groq", [element.label for element in app.button])
+
+    def test_post_analysis_runtime_orders_sections_and_collapses_only_duplicate_evidence(self):
+        """Render one ordered report with warning-free charts and one collapsed evidence duplicate."""
+
+        report = sample_report()
+        app = AppTest.from_file(streamlit_app.__file__)
+        app.session_state["latest_report"] = report
+        app.session_state["collection"] = {"source": report["source"], "reviews": report["reviews"]}
+
+        app.run(timeout=30)
+
+        self.assertEqual(list(app.exception), [])
+        self.assertEqual(len(app.expander), 1)
+        self.assertEqual(app.expander[0].label, "Supporting review evidence")
+        self.assertFalse(app.expander[0].proto.expanded)
+        self.assertEqual(len(app.expander[0].dataframe), 1)
+
+        children = list(app.main.children.values())
+        report_index = next(
+            index
+            for index, child in enumerate(children)
+            if str(getattr(child, "value", "")).startswith('<section class="ri-report-hero"')
+        )
+        metric_index = next(
+            index
+            for index, child in enumerate(children)
+            if str(getattr(child, "value", "")).startswith('<section class="ri-metric-grid"')
+        )
+        summary_index = next(
+            index
+            for index, child in enumerate(children)
+            if str(getattr(child, "value", "")).startswith('<section class="ri-summary-card"')
+        )
+        customer_signals_index = next(
+            index for index, child in enumerate(children) if getattr(child, "value", "") == "Customer signals"
+        )
+        chart_index = next(
+            index
+            for index, child in enumerate(children)
+            if getattr(child, "type", "") == "flex_container" and len(child.get("vega_lite_chart")) == 2
+        )
+        themes_index = next(
+            index for index, child in enumerate(children) if getattr(child, "value", "") == "Recurring themes"
+        )
+        theme_grid_index = next(
+            index
+            for index, child in enumerate(children)
+            if str(getattr(child, "value", "")).startswith('<section class="ri-theme-grid"')
+        )
+        insights_index = next(
+            index
+            for index, child in enumerate(children)
+            if str(getattr(child, "value", "")).startswith('<section class="ri-insight-grid"')
+        )
+        evidence_index = next(
+            index
+            for index, child in enumerate(children)
+            if getattr(child, "label", "") == "Supporting review evidence"
+        )
+        ordered_sections = [
+            report_index,
+            metric_index,
+            summary_index,
+            customer_signals_index,
+            chart_index,
+            themes_index,
+            theme_grid_index,
+            insights_index,
+            evidence_index,
+        ]
+        self.assertEqual(ordered_sections, sorted(ordered_sections))
+
+        charts = app.get("vega_lite_chart")
+        self.assertEqual(len(charts), 2)
+        rendered_specs = [json.loads(chart.proto.spec) for chart in charts]
+        self.assertEqual(rendered_specs[0]["height"], 260)
+        self.assertEqual(
+            rendered_specs[0]["encoding"]["color"]["scale"]["range"],
+            ["#15803d", "#a16207", "#b91c1c", "#4f46e5"],
+        )
+        for spec in rendered_specs:
+            serialized = json.dumps(spec)
+            self.assertNotIn('"params"', serialized)
+            self.assertNotIn('"bind"', serialized)
+            self.assertNotIn("Reviews_start", serialized)
+            self.assertNotIn("Reviews_end", serialized)
 
 
 if __name__ == "__main__":
