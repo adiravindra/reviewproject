@@ -238,11 +238,16 @@ def _extract_html_cards(html: str) -> tuple[str | None, list[dict[str, Any]]]:
     page_title = _clean_text(soup.title.get_text()) if soup.title else None
     # Arbitrary paragraphs are intentionally excluded: ordinary page copy is
     # not reliable evidence that an author intended the text as a review.
-    containers = soup.select('[itemprop="review"], .review, .review-card, [data-review-id]')
+    containers = soup.select(
+        '[itemprop="review"], .review, .review-card, [data-review-id], '
+        'article[class*="review" i], li[class*="review" i], '
+        'div[class*="review" i][class*="card" i]'
+    )
     candidates: list[dict[str, Any]] = []
     for container in containers:
         body = container.select_one(
-            '[itemprop="reviewBody"], .review-body, .review-text, .review-content, [data-review-body]'
+            '[itemprop="reviewBody"], .review-body, .review-text, .review-content, [data-review-body], '
+            '[class*="review" i][class*="body" i], [class*="review" i][class*="content" i]'
         )
         if body is None:
             continue

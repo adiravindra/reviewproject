@@ -140,6 +140,25 @@ class CollectorTests(unittest.TestCase):
         self.assertEqual(result.source.title, "Customer reviews")
         self.assertEqual(len(result.reviews), 2)
 
+    def test_static_cards_support_generic_review_card_and_body_class_names(self):
+        """Recognize broadly named static review cards without a site-specific selector."""
+
+        html = """
+        <html><head><title>Extension reviews</title></head><body>
+          <div class="CustomerReviewCard"><section class="CustomerReviewBody">First full review body.</section></div>
+          <div class="CustomerReviewCard"><section class="CustomerReviewBody">Second full review body.</section></div>
+        </body></html>
+        """
+
+        result = collect_reviews(
+            "https://example.com/reviews",
+            session=TextSession(html),
+            resolver=public_resolver,
+        )
+
+        self.assertEqual(result.source.extractor, "html_cards")
+        self.assertEqual([review.text for review in result.reviews], ["First full review body.", "Second full review body."])
+
     def test_fallback_does_not_promote_arbitrary_paragraphs(self):
         """Reject ordinary page prose as insufficient review evidence."""
 
