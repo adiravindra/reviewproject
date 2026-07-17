@@ -87,6 +87,7 @@ def collect_reviews(
                 url=current_url,
                 title=title or urlparse(current_url).hostname or "Review page",
                 extractor=extractor,
+                is_demo=False,
             ),
             reviews=reviews,
         )

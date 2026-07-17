@@ -1,0 +1,65 @@
+{
+  "title": "Aurora Pour-Over Kettle",
+  "reviews": [
+    {
+      "id": "demo-01",
+      "text": "The Aurora kettle heats quickly and the one-degree controls made my morning pour-over routine much more consistent. The display is bright without lighting up the whole kitchen.",
+      "rating": 5,
+      "date": "2026-01-14"
+    },
+    {
+      "id": "demo-02",
+      "text": "I bought this for the gooseneck spout and it gives a remarkably steady stream around the coffee bed. It feels solid, and the hold-temperature setting works exactly as advertised.",
+      "rating": 5,
+      "date": "2026-02-03"
+    },
+    {
+      "id": "demo-03",
+      "text": "The kettle looks elegant on the counter and reaches brewing temperature fast. I wish the beep were softer, but the handle stays cool and the controls are straightforward.",
+      "rating": 4,
+      "date": "2026-02-18"
+    },
+    {
+      "id": "demo-04",
+      "text": "Temperature accuracy has been good in my tests, and the balanced handle makes a full kettle easy to pour. The lid opens smoothly, although fingerprints show on the matte finish.",
+      "rating": 4,
+      "date": "2026-03-09"
+    },
+    {
+      "id": "demo-05",
+      "text": "This is a capable kettle with useful presets, but the base takes up more counter space than I expected. The pour is controlled once the kettle is half full.",
+      "rating": 3,
+      "date": "2026-03-27"
+    },
+    {
+      "id": "demo-06",
+      "text": "The water reaches the selected temperature reliably and cleanup is simple. For the price, I hoped the display would be easier to read from across the kitchen.",
+      "rating": 3,
+      "date": "2026-04-11"
+    },
+    {
+      "id": "demo-07",
+      "text": "After two months, the temperature buttons occasionally need a second press. The kettle still pours nicely, but that small control issue makes the premium price harder to justify.",
+      "rating": 2,
+      "date": "2026-04-29"
+    },
+    {
+      "id": "demo-08",
+      "text": "I like the precise spout, but the lid gets surprisingly warm during longer heating cycles. The beep is loud enough to wake someone in the next room early in the morning.",
+      "rating": 2,
+      "date": "2026-05-16"
+    },
+    {
+      "id": "demo-09",
+      "text": "The kettle stopped holding temperature after a few weeks and support has not resolved the problem. It still boils water, but the feature I paid for is no longer dependable.",
+      "rating": 1,
+      "date": "2026-06-02"
+    },
+    {
+      "id": "demo-10",
+      "text": "Mine arrived with a loose base that made electrical contact inconsistent. The replacement process was slow, and I would not recommend it until quality control improves.",
+      "rating": 1,
+      "date": "2026-06-21"
+    }
+  ]
+}
