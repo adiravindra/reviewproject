@@ -152,5 +152,6 @@ class PublicError(BaseModel):
         "analysis_failed",
         "model_output_invalid",
         "history_failed",
+        "history_not_found",
     ]
     message: str

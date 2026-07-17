@@ -1,6 +1,7 @@
-"""Test FastAPI routes, staged validation, and safe public failure envelopes."""
+"""Test staged FastAPI routes and their safe public failure envelopes."""
 
 import unittest
+from inspect import signature
 from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
@@ -9,7 +10,14 @@ from pydantic import ValidationError
 from backend.app.collector import CollectionError
 from backend.app.errors import AnalysisError
 from backend.app.main import create_app
-from backend.app.models import AnalysisResponse, HistoryItem, PublicError, Theme
+from backend.app.service import run_analysis
+from backend.app.models import (
+    AnalysisResponse,
+    CollectionResult,
+    HistoryItem,
+    PublicError,
+    Theme,
+)
 
 
 def sample_collection_payload() -> dict:
@@ -28,6 +36,20 @@ def sample_collection_payload() -> dict:
             {"id": "r3", "text": "Microphone quality needs meaningful improvement."},
         ],
     }
+
+
+def sample_collection() -> CollectionResult:
+    """Build a valid collection returned by a collector or demo-loader fake."""
+
+    return CollectionResult.model_validate(sample_collection_payload())
+
+
+def sample_demo_collection() -> CollectionResult:
+    """Build explicitly labeled demo data returned by the demo-loader fake."""
+
+    payload = sample_collection_payload()
+    payload["source"].update({"url": None, "extractor": "demo", "is_demo": True})
+    return CollectionResult.model_validate(payload)
 
 
 def sample_response() -> AnalysisResponse:
@@ -69,117 +91,269 @@ def sample_response() -> AnalysisResponse:
     )
 
 
+class FakeHistoryStore:
+    """Record history boundary calls without creating the lazy local database."""
+
+    def __init__(self, *, saved_id=7, items=None, report=None):
+        """Configure one deterministic history outcome for each endpoint."""
+
+        self.saved_id = saved_id
+        self.items = [] if items is None else items
+        self.report = report
+        self.saved_reports = []
+        self.list_calls = 0
+        self.get_calls = []
+
+    def save(self, report):
+        """Record the exact report submitted for persistence."""
+
+        self.saved_reports.append(report)
+        if isinstance(self.saved_id, Exception):
+            raise self.saved_id
+        return self.saved_id
+
+    def list_runs(self):
+        """Return the configured newest-first safe history summaries."""
+
+        self.list_calls += 1
+        if isinstance(self.items, Exception):
+            raise self.items
+        return self.items
+
+    def get(self, run_id):
+        """Return the configured report while retaining the looked-up ID."""
+
+        self.get_calls.append(run_id)
+        if isinstance(self.report, Exception):
+            raise self.report
+        return self.report
+
+
 class ApiTests(unittest.TestCase):
     """Group regression contracts at the public HTTP boundary."""
 
-    def test_only_health_and_analyze_are_active(self):
-        """Keep the transitional MVP surface limited to readiness and analysis routes."""
+    def test_exact_route_set_and_health_response(self):
+        """Expose only readiness plus the staged collection, analysis, and history routes."""
 
-        client = TestClient(create_app(analysis_service=lambda collection: sample_response()))
+        self.assertIs(signature(create_app).parameters["analysis_service"].default, run_analysis)
+        client = TestClient(create_app(history_store=FakeHistoryStore()))
         self.assertEqual(client.get("/health").json(), {"status": "ok"})
         paths = set(client.get("/openapi.json").json()["paths"])
-        self.assertEqual(paths, {"/health", "/api/analyze"})
-
-    def test_analyze_returns_the_validated_response(self):
-        """Pass the validated staged collection to the service and serialize its report."""
-
-        service = Mock(return_value=sample_response())
-        client = TestClient(create_app(analysis_service=service))
-        response = client.post("/api/analyze", json=sample_collection_payload())
-        self.assertEqual(response.status_code, 200)
-        submitted = service.call_args.args[0]
-        self.assertEqual(submitted.source.title, "Everyday Headphones")
-        self.assertEqual([review.id for review in submitted.reviews], ["r1", "r2", "r3"])
-        self.assertEqual(response.json()["metrics"]["review_count"], 3)
-
-    def test_known_failures_have_small_safe_envelopes(self):
-        """Expose collection failures only through the documented detail shape."""
-
-        def fail(collection):
-            """Simulate a known insufficient-review collection failure."""
-
-            raise CollectionError("no_reviews", "At least two public reviews are required.")
-
-        response = TestClient(create_app(analysis_service=fail)).post(
-            "/api/analyze", json=sample_collection_payload()
-        )
-        self.assertEqual(response.status_code, 422)
         self.assertEqual(
-            response.json(),
+            paths,
             {
-                "detail": {
-                    "code": "no_reviews",
-                    "message": "At least two public reviews are required.",
-                }
+                "/health",
+                "/api/collect",
+                "/api/demo",
+                "/api/analyze",
+                "/api/history",
+                "/api/history/{run_id}",
             },
         )
 
-    def test_collection_and_provider_failures_map_to_public_statuses(self):
-        """Map domain codes stably while excluding chained provider secrets."""
+    def test_collect_passes_normalized_url_once_without_analysis_or_history(self):
+        """Keep static collection independent from Groq analysis and local persistence."""
 
-        invalid_key = AnalysisError("invalid_api_key", "The selected credential is invalid.")
-        invalid_key.__cause__ = RuntimeError(
-            "Authorization: Bearer fake-secret-key; raw provider rejection"
+        collector = Mock(return_value=sample_collection())
+        service = Mock(return_value=sample_response())
+        history = FakeHistoryStore()
+        response = TestClient(
+            create_app(collector=collector, analysis_service=service, history_store=history)
+        ).post("/api/collect", json={"url": "https://example.com/product"})
+        self.assertEqual(response.status_code, 200)
+        collector.assert_called_once_with("https://example.com/product")
+        service.assert_not_called()
+        self.assertEqual(history.saved_reports, [])
+        self.assertEqual(response.json()["source"]["title"], "Everyday Headphones")
+
+    def test_demo_calls_loader_once_and_preserves_explicit_provenance(self):
+        """Serve bundled data only through its explicit, visibly labeled endpoint."""
+
+        demo_loader = Mock(return_value=sample_demo_collection())
+        response = TestClient(create_app(demo_loader=demo_loader, history_store=FakeHistoryStore())).get(
+            "/api/demo"
         )
-        unavailable = AnalysisError("provider_unavailable", "The selected provider is temporarily unavailable.")
-        unavailable.__cause__ = RuntimeError(
-            "Authorization: Bearer fake-groq-key; raw provider timeout details"
+        self.assertEqual(response.status_code, 200)
+        demo_loader.assert_called_once_with()
+        self.assertEqual(
+            response.json()["source"],
+            {"url": None, "title": "Everyday Headphones", "extractor": "demo", "is_demo": True},
         )
-        cases = [
-            (CollectionError("invalid_url", "Use a public URL."), 422, ()),
-            (CollectionError("collection_failed", "The page could not be read."), 502, ()),
-            (AnalysisError("missing_api_key", "Set the provider key."), 400, ()),
-            (invalid_key, 401, ("fake-secret-key", "raw provider rejection")),
-            (unavailable, 503, ("fake-groq-key", "raw provider timeout details")),
-            (AnalysisError("analysis_failed", "The analysis failed."), 502, ()),
-        ]
-        for error, expected_status, private_details in cases:
-            with self.subTest(code=error.code):
-                def fail(collection, raised=error):
-                    """Raise the current table-driven domain failure."""
 
-                    raise raised
-
-                response = TestClient(create_app(analysis_service=fail)).post(
-                    "/api/analyze", json=sample_collection_payload()
-                )
-                self.assertEqual(response.status_code, expected_status)
-                self.assertEqual(response.json()["detail"]["code"], error.code)
-                for detail in private_details:
-                    self.assertNotIn(detail, response.text)
-
-    def test_public_error_accepts_credential_codes(self):
-        """Keep credential preflight codes inside the declared public schema."""
-
-        for code in ("invalid_api_key", "provider_unavailable"):
-            with self.subTest(code=code):
-                error = PublicError(code=code, message="Safe credential message.")
-                self.assertEqual(error.code, code)
-
-    def test_malformed_request_does_not_call_service(self):
-        """Reject malformed staged evidence during validation before service work."""
+    def test_analyze_rejects_provider_and_calls_no_service(self):
+        """Forbid obsolete provider selection at the request-validation boundary."""
 
         service = Mock(return_value=sample_response())
-        response = TestClient(create_app(analysis_service=service)).post(
-            "/api/analyze", json={"url": "not a url"}
+        payload = sample_collection_payload() | {"provider": "groq"}
+        response = TestClient(create_app(analysis_service=service, history_store=FakeHistoryStore())).post(
+            "/api/analyze", json=payload
         )
         self.assertEqual(response.status_code, 422)
         service.assert_not_called()
 
-    def test_unexpected_exception_is_generic(self):
-        """Convert unknown exceptions to a generic non-leaking server error."""
+    def test_analyze_passes_exact_collection_saves_once_and_returns_history_id(self):
+        """Analyze only submitted evidence, persist it once, then expose its local ID."""
+
+        service = Mock(return_value=sample_response())
+        history = FakeHistoryStore(saved_id=13)
+        response = TestClient(create_app(analysis_service=service, history_store=history)).post(
+            "/api/analyze", json=sample_collection_payload()
+        )
+        self.assertEqual(response.status_code, 200)
+        submitted = service.call_args.args[0]
+        self.assertEqual(submitted, sample_collection())
+        self.assertEqual(history.saved_reports, [sample_response()])
+        self.assertEqual(response.json()["history_id"], 13)
+
+    def test_analysis_failure_does_not_save_history(self):
+        """Never persist a report when analysis itself did not succeed."""
 
         def fail(collection):
-            """Simulate an unexpected internal failure carrying private details."""
+            """Simulate an expected Groq availability failure."""
 
-            raise RuntimeError("database password and provider internals")
+            raise AnalysisError("groq_unavailable", "Groq is temporarily unavailable.")
 
-        response = TestClient(create_app(analysis_service=fail)).post(
+        history = FakeHistoryStore()
+        response = TestClient(create_app(analysis_service=fail, history_store=history)).post(
+            "/api/analyze", json=sample_collection_payload()
+        )
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(history.saved_reports, [])
+
+    def test_history_save_failure_does_not_return_successful_report(self):
+        """Convert persistence failures into the documented safe history error."""
+
+        history = FakeHistoryStore(
+            saved_id=AnalysisError("history_failed", "Local history could not be updated.")
+        )
+        response = TestClient(
+            create_app(analysis_service=Mock(return_value=sample_response()), history_store=history)
+        ).post(
             "/api/analyze", json=sample_collection_payload()
         )
         self.assertEqual(response.status_code, 500)
         self.assertEqual(
             response.json(),
+            {"detail": {"code": "history_failed", "message": "Local history could not be updated."}},
+        )
+
+    def test_history_list_returns_safe_newest_first_summaries(self):
+        """Forward only the already-safe ordering and fields supplied by history storage."""
+
+        items = [
+            HistoryItem(
+                id=9,
+                created_at="2026-07-17T12:00:00Z",
+                source_title="New report",
+                source_url=None,
+                extractor="demo",
+                is_demo=True,
+                review_count=10,
+                overall_sentiment="mixed",
+            )
+        ]
+        history = FakeHistoryStore(items=items)
+        response = TestClient(create_app(history_store=history)).get("/api/history")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(history.list_calls, 1)
+        self.assertEqual(response.json(), [item.model_dump() for item in items])
+
+    def test_history_get_returns_report_with_looked_up_id_and_safe_absence(self):
+        """Restore reports by ID and distinguish an absent row without storage details."""
+
+        history = FakeHistoryStore(report=sample_response())
+        client = TestClient(create_app(history_store=history))
+        found = client.get("/api/history/42")
+        self.assertEqual(found.status_code, 200)
+        self.assertEqual(history.get_calls, [42])
+        self.assertEqual(found.json()["history_id"], 42)
+
+        absent_history = FakeHistoryStore(report=None)
+        absent = TestClient(create_app(history_store=absent_history)).get("/api/history/404")
+        self.assertEqual(absent.status_code, 404)
+        self.assertEqual(
+            absent.json(),
+            {
+                "detail": {
+                    "code": "history_not_found",
+                    "message": "That history entry was not found.",
+                }
+            },
+        )
+
+    def test_collection_errors_map_to_exact_safe_statuses(self):
+        """Map every public collection error code without exposing chained details."""
+
+        marker = "Authorization: Bearer fake-secret; raw page body"
+        cases = [
+            ("invalid_url", 422),
+            ("no_reviews", 422),
+            ("malformed_json_ld", 422),
+            ("site_blocked", 502),
+            ("collection_timeout", 504),
+            ("collection_failed", 502),
+        ]
+        for code, expected_status in cases:
+            with self.subTest(code=code):
+                error = CollectionError(code, f"Safe {code} message.")
+                error.__cause__ = RuntimeError(marker)
+                response = TestClient(
+                    create_app(collector=Mock(side_effect=error), history_store=FakeHistoryStore())
+                ).post("/api/collect", json={"url": "https://example.com/product"})
+                self.assertEqual(response.status_code, expected_status)
+                self.assertEqual(
+                    response.json(), {"detail": {"code": code, "message": error.public_message}}
+                )
+                self.assertNotIn(marker, response.text)
+
+    def test_analysis_and_history_errors_map_to_exact_safe_statuses(self):
+        """Map every analysis/history code while withholding provider and storage markers."""
+
+        marker = "Authorization: Bearer fake-secret; raw provider response"
+        cases = [
+            ("missing_api_key", 400),
+            ("invalid_api_key", 401),
+            ("groq_unavailable", 503),
+            ("analysis_failed", 502),
+            ("model_output_invalid", 502),
+            ("history_failed", 500),
+        ]
+        for code, expected_status in cases:
+            with self.subTest(code=code):
+                error = AnalysisError(code, f"Safe {code} message.")
+                error.__cause__ = RuntimeError(marker)
+                if code == "history_failed":
+                    history = FakeHistoryStore(saved_id=error)
+                    app = create_app(analysis_service=Mock(return_value=sample_response()), history_store=history)
+                else:
+                    app = create_app(analysis_service=Mock(side_effect=error), history_store=FakeHistoryStore())
+                response = TestClient(app).post("/api/analyze", json=sample_collection_payload())
+                self.assertEqual(response.status_code, expected_status)
+                self.assertEqual(
+                    response.json(), {"detail": {"code": code, "message": error.public_message}}
+                )
+                self.assertNotIn(marker, response.text)
+
+    def test_malformed_collection_url_is_rejected_before_collector_work(self):
+        """Let request validation reject malformed URLs before any network collection begins."""
+
+        collector = Mock(return_value=sample_collection())
+        response = TestClient(create_app(collector=collector, history_store=FakeHistoryStore())).post(
+            "/api/collect", json={"url": "not a url"}
+        )
+        self.assertEqual(response.status_code, 422)
+        collector.assert_not_called()
+
+    def test_unknown_and_demo_failures_use_generic_safe_messages(self):
+        """Never leak raw bodies, configured credentials, or internal exception text."""
+
+        marker = "fake-secret raw body traceback database password"
+        collection = TestClient(
+            create_app(collector=Mock(side_effect=RuntimeError(marker)), history_store=FakeHistoryStore())
+        ).post("/api/collect", json={"url": "https://example.com/product"})
+        self.assertEqual(collection.status_code, 500)
+        self.assertEqual(
+            collection.json(),
             {
                 "detail": {
                     "code": "analysis_failed",
@@ -187,7 +361,37 @@ class ApiTests(unittest.TestCase):
                 }
             },
         )
-        self.assertNotIn("password", response.text)
+        self.assertNotIn(marker, collection.text)
+
+        unknown = TestClient(
+            create_app(analysis_service=Mock(side_effect=RuntimeError(marker)), history_store=FakeHistoryStore())
+        ).post("/api/analyze", json=sample_collection_payload())
+        self.assertEqual(unknown.status_code, 500)
+        self.assertEqual(
+            unknown.json(),
+            {
+                "detail": {
+                    "code": "analysis_failed",
+                    "message": "The analysis could not be completed.",
+                }
+            },
+        )
+        self.assertNotIn(marker, unknown.text)
+
+        demo = TestClient(
+            create_app(demo_loader=Mock(side_effect=RuntimeError(marker)), history_store=FakeHistoryStore())
+        ).get("/api/demo")
+        self.assertEqual(demo.status_code, 500)
+        self.assertEqual(
+            demo.json(),
+            {
+                "detail": {
+                    "code": "collection_failed",
+                    "message": "Bundled demo data could not be loaded.",
+                }
+            },
+        )
+        self.assertNotIn(marker, demo.text)
 
 
 class ApiContractTests(unittest.TestCase):
@@ -210,6 +414,12 @@ class ApiContractTests(unittest.TestCase):
                 mentions=3,
                 sentiment="mixed",
             )
+
+    def test_public_error_accepts_history_not_found(self):
+        """Keep the explicit absent-history code inside the declared public schema."""
+
+        error = PublicError(code="history_not_found", message="That history entry was not found.")
+        self.assertEqual(error.code, "history_not_found")
 
     def test_history_item_preserves_safe_source_summary_metadata(self):
         """Represent history navigation without retaining arbitrary provider content."""
