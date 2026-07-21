@@ -138,4 +138,4 @@ Automated tests use fixtures and fakes, so they do not spend Groq quota or depen
 .\.venv\Scripts\python.exe -m compileall -q backend dashboard tests run_app.py
 ```
 
-The controller-owned final local smoke test must use installed Google Chrome and cover startup readiness, live extraction and Groq analysis, history restoration, safe error paths, explicit demo analysis, responsive layouts, and the application console. That final Chrome pass is still pending for this redesigned build; see [docs/project_status.md](docs/project_status.md) for the current automated record and remaining verification work.
+The bundled workflow was verified in installed Google Chrome on July 21, 2026: ordered dual-service startup, explicit demo loading, provider-backed Groq analysis, SQLite history restoration, desktop and 430-pixel responsive layouts, and a clean warning/error console all passed. Live third-party source extraction remains a separate environment-dependent smoke check; see [docs/project_status.md](docs/project_status.md) for the detailed record.

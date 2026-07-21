@@ -245,6 +245,11 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible {
 .ri-neutral { color: var(--ri-neutral); background: var(--ri-neutral-bg); border-color: var(--ri-neutral-border); }
 .ri-mixed { color: var(--ri-mixed); background: var(--ri-mixed-bg); border-color: var(--ri-mixed-border); }
 .ri-info { color: var(--ri-info); background: var(--ri-info-bg); border-color: var(--ri-info-border); }
+@media (max-width: 1100px) {
+    .ri-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ri-theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ri-insight-grid { grid-template-columns: 1fr; }
+}
 @media (max-width: 900px) {
     .ri-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .ri-theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -401,6 +406,8 @@ def sentiment_chart_spec(report: dict[str, Any]) -> dict[str, Any]:
     """Build a warning-free sentiment bar spec with explicit semantic colors."""
 
     domain = ["Positive", "Neutral", "Negative", "Mixed"]
+    rows = sentiment_rows(report)
+    review_domain = [0, max(1, *(row["Reviews"] for row in rows))]
     colors = [
         _VISUALS["positive"].foreground,
         _VISUALS["neutral"].foreground,
@@ -408,7 +415,7 @@ def sentiment_chart_spec(report: dict[str, Any]) -> dict[str, Any]:
         _VISUALS["mixed"].foreground,
     ]
     return {
-        "data": {"values": sentiment_rows(report)},
+        "data": {"values": rows},
         "mark": {"type": "bar", "cornerRadiusTopLeft": 4, "cornerRadiusTopRight": 4},
         "encoding": {
             "x": {
@@ -420,7 +427,8 @@ def sentiment_chart_spec(report: dict[str, Any]) -> dict[str, Any]:
             "y": {
                 "field": "Reviews",
                 "type": "quantitative",
-                "scale": {"domainMin": 0, "nice": True},
+                "stack": None,
+                "scale": {"domain": review_domain, "nice": True},
                 "axis": {"title": "Reviews", "tickMinStep": 1},
             },
             "color": {
@@ -434,6 +442,7 @@ def sentiment_chart_spec(report: dict[str, Any]) -> dict[str, Any]:
                 {"field": "Reviews", "type": "quantitative"},
             ],
         },
+        "width": "container",
         "height": 260,
         "config": {"view": {"stroke": None}},
     }
@@ -443,8 +452,10 @@ def rating_chart_spec(report: dict[str, Any]) -> dict[str, Any]:
     """Build a warning-free royal-blue rating-distribution bar spec."""
 
     rating_order = [f"{star} star" for star in range(1, 6)]
+    rows = rating_rows(report)
+    review_domain = [0, max(1, *(row["Reviews"] for row in rows))]
     return {
-        "data": {"values": rating_rows(report)},
+        "data": {"values": rows},
         "mark": {"type": "bar", "cornerRadiusTopLeft": 4, "cornerRadiusTopRight": 4},
         "encoding": {
             "x": {
@@ -456,7 +467,8 @@ def rating_chart_spec(report: dict[str, Any]) -> dict[str, Any]:
             "y": {
                 "field": "Reviews",
                 "type": "quantitative",
-                "scale": {"domainMin": 0, "nice": True},
+                "stack": None,
+                "scale": {"domain": review_domain, "nice": True},
                 "axis": {"title": "Reviews", "tickMinStep": 1},
             },
             "color": {"value": "#2563eb"},
@@ -465,6 +477,7 @@ def rating_chart_spec(report: dict[str, Any]) -> dict[str, Any]:
                 {"field": "Reviews", "type": "quantitative"},
             ],
         },
+        "width": "container",
         "height": 260,
         "config": {"view": {"stroke": None}},
     }

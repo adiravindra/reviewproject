@@ -1,7 +1,7 @@
 # Project Status
 
-**Date:** July 17, 2026
-**Status:** Reliable dual-service launch and the redesigned staged report are implemented. Automated verification is complete; final installed-Google-Chrome verification is pending and controller-owned.
+**Date:** July 21, 2026
+**Status:** The bundled demo workflow and redesigned staged report are implemented and verified end to end in installed Google Chrome.
 
 ## Current feature inventory
 
@@ -9,11 +9,11 @@
 - One shared 30-second deadline begins when FastAPI launches and remains active through Streamlit startup without resetting. The browser opens only after FastAPI `GET /health` returns HTTP 200 with exactly `{"status":"ok"}` and the subsequently launched Streamlit `GET /_stcore/health` returns HTTP 200. Timeout or child exit returns a failure and cleans up whichever children were started.
 - The UI accepts a public review-page URL in a bordered extraction workspace, calls `POST /api/collect`, and displays a grouped source summary and normalized evidence before analysis. Collection is static HTTP only and prefers JSON-LD before conservative HTML review cards.
 - `GET /api/demo` loads the ten-review bundled local dataset only after the user selects **Use bundled demo data**. Demo provenance is visible with `🧪 DEMO DATA`; failed live extraction never activates that dataset.
-- `POST /api/analyze` accepts the already displayed source and review evidence, validates `GROQ_API_KEY`, uses the Llama Versatile Groq configuration, validates structured insights, and computes metrics in Python.
-- The source summary and review table remain visible throughout the pre-analysis stage. Once a report exists, that workspace is replaced by the evidence-first report hierarchy: source and sentiment hero, four metrics, executive summary, customer-signal charts, recurring themes, strengths, concerns, recommended actions, and the source/review evidence retained only in the collapsed **Supporting review evidence** expander.
+- `POST /api/analyze` accepts the already displayed source and review evidence, validates `GROQ_API_KEY`, uses the Llama Versatile Groq configuration, validates structured insights, and computes metrics in Python. Theme-level insights permit positive, neutral, negative, or mixed sentiment, while individual review classifications remain three-state.
+- The source summary and review table remain visible throughout the pre-analysis stage. Once a report exists, that workspace is replaced by the evidence-first report hierarchy: source and sentiment hero, four metrics, executive summary, **Customer signals**, **Recurring themes**, **Customer priorities**, and the source/review evidence retained only in the collapsed **Supporting review evidence** expander. Positive, negative, neutral, mixed, and action treatments share one card anatomy and paired text/icon cues.
 - Responsive behavior keeps desktop actions and report groups side by side where space permits, then stacks actions, charts, themes, and insight panels at narrower widths while retaining a compact two-column metric grid on mobile.
 - Successful reports are written atomically to local SQLite at `data/review_history.db`. `GET /api/history` returns newest-first summaries, and `GET /api/history/{run_id}` restores one saved report.
-- The backend exposes safe actionable errors for invalid URLs, blocked sites, timeouts, malformed structured review data, missing reviews, missing or invalid Groq configuration, unavailable Groq validation, model-output parsing, and history failures.
+- The backend exposes safe actionable errors for invalid URLs, blocked sites, timeouts, malformed structured review data, missing reviews, missing or invalid Groq configuration, unavailable Groq validation, model-output parsing, and history failures. Recoverable analysis errors explicitly tell the user that the collected reviews remain available for another attempt.
 - Credentials, headers, raw AI responses, upstream response bodies, internal exceptions, and tracebacks do not cross the FastAPI boundary.
 
 ## Runtime and configuration
@@ -50,22 +50,15 @@ Run the full local checks with:
 
 ## Automated verification record
 
-On July 17, 2026, the complete fixture/fake-backed unittest discovery command passed **143/143 tests**, and `compileall -q backend dashboard tests run_app.py` exited with status 0. The automated suite does not contact a live review source or Groq and does not constitute browser-level verification.
+On July 21, 2026, the complete fixture/fake-backed unittest discovery command passed **148/148 tests**, and `compileall -q backend dashboard tests run_app.py` exited with status 0. The automated suite itself does not contact a live review source or Groq; the separate installed-Chrome record below covers the provider-backed bundled demo.
 
-## Pending installed-Chrome verification
+## Installed-Google-Chrome verification
 
-The controller owns the final installed-Google-Chrome pass for this reliable-launch and redesigned-report branch. This documentation task does **not** claim that pass has completed. It remains to record:
+On July 21, 2026, the supported `run_app.py` launcher started FastAPI first, observed its exact health response, and then started Streamlit successfully. In installed Google Chrome, the explicit bundled demo loaded all 10 reviews, provider-backed Groq analysis completed, the mixed report was saved, and history restored the report. The report was inspected at the normal desktop width and at a true 430-by-900 viewport; the narrow layout stacked charts and insight panels without horizontal overflow. A final fresh Chrome run completed with no warning or error console entries.
 
-- fresh launch readiness and delayed browser opening until both health contracts succeed;
-- live static extraction, including review count and extractor;
-- live Groq analysis and saved report;
-- history refresh and restored report;
-- invalid-URL and no-review safe error states without implicit demo fallback;
-- explicit demo collection plus provider-backed demo analysis;
-- desktop and narrow responsive layouts; and
-- a clean application console.
+The reproduced 502 root cause was a contract mismatch: Groq correctly produced `mixed` for a recurring theme with both favorable and unfavorable evidence, while the theme schema accepted only the three individual-review states. The schema and prompt now distinguish those two contracts. The previous non-fatal Vega extent warnings were removed by giving both charts explicit data-derived numeric domains.
 
-The earlier 121-test Chrome smoke record applied to the pre-redesign baseline and is not treated as final evidence for the current branch.
+This pass intentionally covered the bundled demo workflow requested for this branch. Live third-party extraction and provider-independent invalid-source cases remain covered by fixtures and should be re-smoked when choosing a specific external source for a presentation.
 
 ## Known limitations
 

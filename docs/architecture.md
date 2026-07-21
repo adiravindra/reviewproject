@@ -92,6 +92,8 @@ The source summary and review table remain visible in the main flow throughout t
 - `⚠️ Negative` is styled in red for complaints and unfavorable themes.
 - `➖ Neutral` uses amber, and `↔ Mixed` uses a distinct indigo treatment.
 
+Individual review classifications remain positive, neutral, or negative. Theme-level sentiment additionally permits `mixed` when the same recurring topic has meaningful positive and negative evidence; the backend schema and Groq prompt share that contract.
+
 Untrusted source titles, themes, model insights, and review text are escaped before being included in styled markup. The dashboard uses Streamlit containers, metric cards, tables, charts, and sidebar controls without storing or displaying any credential.
 
 Responsive CSS preserves the report hierarchy rather than removing information. Desktop uses side-by-side actions, four metric columns, two charts, up to three theme columns, and three insight columns. At the tablet breakpoint, Streamlit action columns and charts stack, metrics wrap to two columns, and themes use two columns. At the mobile breakpoint, the process strip, themes, and insight panels become single-column, while metrics remain a compact two-column grid and container padding is reduced. The sidebar uses Streamlit's automatic initial state for narrow screens.

@@ -546,8 +546,19 @@ class DashboardFormattingTests(unittest.TestCase):
             self.assertIn(selector, DASHBOARD_CSS)
         self.assertIn("--ri-section-gap", DASHBOARD_CSS)
         self.assertIn("--ri-card-gap", DASHBOARD_CSS)
+        self.assertIn("@media (max-width: 1100px)", DASHBOARD_CSS)
         self.assertIn("@media (max-width: 900px)", DASHBOARD_CSS)
         self.assertIn("@media (max-width: 640px)", DASHBOARD_CSS)
+
+    def test_medium_width_reflows_dense_report_grids_before_the_sidebar_squeezes_them(self):
+        """Keep report cards readable when the open sidebar reduces content width."""
+
+        medium_css = DASHBOARD_CSS.split("@media (max-width: 1100px)", 1)[1].split(
+            "@media (max-width: 900px)", 1
+        )[0]
+        self.assertIn(".ri-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }", medium_css)
+        self.assertIn(".ri-theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }", medium_css)
+        self.assertIn(".ri-insight-grid { grid-template-columns: 1fr; }", medium_css)
 
     def test_page_configuration_uses_streamlits_mobile_safe_sidebar_state(self):
         """Let Streamlit collapse the sidebar automatically on narrow screens."""
@@ -614,11 +625,14 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertEqual(rating_spec["encoding"]["color"]["value"], "#2563eb")
         for spec in (sentiment_spec, rating_spec):
             serialized = json.dumps(spec)
+            self.assertEqual(spec["width"], "container")
+            self.assertIsNone(spec["encoding"]["y"]["stack"])
+            self.assertEqual(spec["encoding"]["y"]["scale"]["domain"][0], 0)
+            self.assertGreaterEqual(spec["encoding"]["y"]["scale"]["domain"][1], 1)
             self.assertNotIn('"params"', serialized)
             self.assertNotIn('"bind"', serialized)
             self.assertNotIn("Reviews_start", serialized)
             self.assertNotIn("Reviews_end", serialized)
-            self.assertEqual(spec["encoding"]["y"]["scale"]["domainMin"], 0)
 
     def test_compact_evidence_keeps_rows_without_repeating_the_section_heading(self):
         """Keep pre-analysis evidence prominent and make only the report duplicate compact."""
