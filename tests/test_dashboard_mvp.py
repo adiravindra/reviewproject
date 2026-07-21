@@ -434,6 +434,40 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertNotIn("<script>", markup)
         self.assertIn("safe_theme_card_markup(visual, title, description, mentions)", inspect.getsource(streamlit_app))
 
+    def test_theme_cards_share_one_anatomy_across_every_sentiment_state(self):
+        """Keep positive, neutral, negative, and mixed themes structurally consistent."""
+
+        for semantic in ("positive", "neutral", "negative", "mixed"):
+            with self.subTest(semantic=semantic):
+                visual = sentiment_visual(semantic)
+                markup = safe_theme_card_markup(visual, "Theme", "Description", 3)
+                self.assertIn(f'class="ri-card ri-{semantic}"', markup)
+                self.assertIn(f'class="ri-badge ri-{semantic}"', markup)
+                self.assertIn(f"{visual.icon} {visual.label}", markup)
+                self.assertEqual(markup.count("<strong>"), 1)
+                self.assertEqual(markup.count("<p>"), 1)
+                self.assertEqual(markup.count("<small>"), 1)
+
+    def test_section_heading_markup_establishes_hierarchy_and_escapes_copy(self):
+        """Build one reusable escaped heading for every major report section."""
+
+        markup = streamlit_app.safe_section_heading_markup(
+            "Analysis",
+            "Customer signals",
+            "Compare sentiment and rating patterns across the review set.",
+        )
+        self.assertIn('class="ri-section-heading"', markup)
+        self.assertIn('class="ri-section-heading__eyebrow"', markup)
+        self.assertIn("<h2>Customer signals</h2>", markup)
+        escaped = streamlit_app.safe_section_heading_markup(
+            "<script>alert('x')</script>",
+            "<Signals>",
+            "<b>Unsafe</b>",
+        )
+        self.assertNotIn("<script>", escaped)
+        self.assertNotIn("<b>", escaped)
+        self.assertIn("&lt;Signals&gt;", escaped)
+
     def test_metric_card_markup_escapes_all_values_and_uses_semantic_classes(self):
         """Keep live metric content escaped inside one semantic metric surface."""
 
@@ -472,6 +506,19 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertNotIn("<b>", markup)
         self.assertEqual(markup.count("<li>"), 2)
 
+    def test_recommended_actions_use_a_distinct_informational_panel(self):
+        """Keep actions visually parallel to insights without mislabeling sentiment."""
+
+        markup = streamlit_app.safe_panel_markup(
+            streamlit_app._INFO_VISUAL,
+            "Recommended actions",
+            ["Improve temperature consistency"],
+        )
+        self.assertIn('class="ri-insight-panel ri-info"', markup)
+        self.assertIn(f"{streamlit_app._INFO_VISUAL.icon} Recommended actions", markup)
+        self.assertIn("--ri-info", DASHBOARD_CSS)
+        self.assertIn(".ri-info", DASHBOARD_CSS)
+
     def test_history_timestamp_drops_microseconds_and_timezone_suffixes(self):
         """Keep history labels concise and stable across stored ISO timestamp variants."""
 
@@ -490,12 +537,15 @@ class DashboardFormattingTests(unittest.TestCase):
 
         for selector in (
             ".ri-report-hero",
+            ".ri-section-heading",
             ".ri-metric-grid",
             ".ri-insight-grid",
             ".ri-theme-grid",
             ".ri-chart-card",
         ):
             self.assertIn(selector, DASHBOARD_CSS)
+        self.assertIn("--ri-section-gap", DASHBOARD_CSS)
+        self.assertIn("--ri-card-gap", DASHBOARD_CSS)
         self.assertIn("@media (max-width: 900px)", DASHBOARD_CSS)
         self.assertIn("@media (max-width: 640px)", DASHBOARD_CSS)
 
@@ -542,6 +592,7 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertIn(".ri-theme-grid .ri-badge { width: max-content; max-width: 100%; }", DASHBOARD_CSS)
         tablet_css = DASHBOARD_CSS.split("@media (max-width: 900px)", 1)[1].split("@media (max-width: 640px)", 1)[0]
         self.assertIn(".ri-theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }", tablet_css)
+        self.assertIn(".ri-insight-grid { grid-template-columns: 1fr; }", tablet_css)
 
     def test_chart_specs_use_semantic_colors_without_warning_prone_bindings(self):
         """Build deterministic responsive bars without scale-bound interactions or stacking fields."""
@@ -760,7 +811,9 @@ class DashboardRuntimeTests(unittest.TestCase):
             if str(getattr(child, "value", "")).startswith('<section class="ri-summary-card"')
         )
         customer_signals_index = next(
-            index for index, child in enumerate(children) if getattr(child, "value", "") == "Customer signals"
+            index
+            for index, child in enumerate(children)
+            if '<h2>Customer signals</h2>' in str(getattr(child, "value", ""))
         )
         chart_index = next(
             index
@@ -768,7 +821,9 @@ class DashboardRuntimeTests(unittest.TestCase):
             if getattr(child, "type", "") == "flex_container" and len(child.get("vega_lite_chart")) == 2
         )
         themes_index = next(
-            index for index, child in enumerate(children) if getattr(child, "value", "") == "Recurring themes"
+            index
+            for index, child in enumerate(children)
+            if '<h2>Recurring themes</h2>' in str(getattr(child, "value", ""))
         )
         theme_grid_index = next(
             index
@@ -779,6 +834,11 @@ class DashboardRuntimeTests(unittest.TestCase):
             index
             for index, child in enumerate(children)
             if str(getattr(child, "value", "")).startswith('<section class="ri-insight-grid"')
+        )
+        priorities_index = next(
+            index
+            for index, child in enumerate(children)
+            if '<h2>Customer priorities</h2>' in str(getattr(child, "value", ""))
         )
         evidence_index = next(
             index
@@ -793,6 +853,7 @@ class DashboardRuntimeTests(unittest.TestCase):
             chart_index,
             themes_index,
             theme_grid_index,
+            priorities_index,
             insights_index,
             evidence_index,
         ]

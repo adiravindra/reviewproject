@@ -43,6 +43,8 @@ DASHBOARD_CSS = """
     --ri-space-6: 24px;
     --ri-space-8: 32px;
     --ri-space-12: 48px;
+    --ri-card-gap: 16px;
+    --ri-section-gap: 36px;
     --ri-font-body: 1rem;
     --ri-font-label: .875rem;
     --ri-font-section: clamp(1.375rem, 2.4vw, 1.75rem);
@@ -59,11 +61,14 @@ DASHBOARD_CSS = """
     --ri-mixed: #4f46e5;
     --ri-mixed-bg: #eef2ff;
     --ri-mixed-border: #a5b4fc;
+    --ri-info: #1d4ed8;
+    --ri-info-bg: #eff6ff;
+    --ri-info-border: #93c5fd;
 }
 [data-testid="stToolbar"] { display: none !important; }
 .stApp { background: #ffffff; color: var(--ri-navy); }
 [data-testid="stHeader"] { background: #ffffff; }
-.block-container { max-width: 1200px; padding: 2rem 2.25rem 4rem; }
+.block-container { max-width: 1240px; padding: 2rem 2.25rem 4rem; }
 h1, h2, h3, p, label, [data-testid="stMetricLabel"] { color: var(--ri-navy); }
 h1 { font-size: clamp(2rem, 4vw, 3rem); letter-spacing: -0.04em; font-weight: 750; }
 h2 { letter-spacing: -0.025em; margin-top: 1.4rem; }
@@ -135,22 +140,55 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible {
     background: var(--ri-surface);
     box-shadow: var(--ri-shadow-surface);
 }
-.ri-report-hero { padding: var(--ri-space-6); margin: var(--ri-space-4) 0; }
+.ri-report-hero { padding: var(--ri-space-6); margin: var(--ri-space-6) 0 var(--ri-card-gap); }
 .ri-report-hero__content { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--ri-space-4); }
 .ri-report-hero h2 { font-size: var(--ri-font-section); margin: 0 0 var(--ri-space-2); }
-.ri-report-hero p { color: var(--ri-slate); line-height: 1.55; margin: 0; overflow-wrap: anywhere; }
-.ri-summary-card { padding: var(--ri-space-4); margin: var(--ri-space-4) 0; }
+.ri-report-hero p { color: #52637a; line-height: 1.55; margin: 0; overflow-wrap: anywhere; }
+.ri-summary-card { padding: var(--ri-space-6); margin: var(--ri-card-gap) 0 0; }
 .ri-summary-card h3 { font-size: 1rem; margin: 0 0 var(--ri-space-2); }
-.ri-summary-card p { color: var(--ri-navy); line-height: 1.65; margin: 0; }
+.ri-summary-card p { color: #243b5a; line-height: 1.7; margin: 0; max-width: 76ch; }
 .ri-chart-card { padding: var(--ri-space-4); min-width: 0; }
 .st-key-ri_sentiment_chart_card,
-.st-key-ri_rating_chart_card { min-width: 0; }
+.st-key-ri_rating_chart_card {
+    min-width: 0;
+    height: 100%;
+    border-color: var(--ri-border) !important;
+    border-radius: var(--ri-radius-card) !important;
+    box-shadow: 0 6px 20px rgba(15, 36, 80, .05);
+}
+.ri-section-heading {
+    display: grid;
+    gap: var(--ri-space-1);
+    margin: var(--ri-section-gap) 0 var(--ri-space-3);
+}
+.ri-section-heading__eyebrow {
+    color: var(--ri-blue);
+    font-size: .75rem;
+    font-weight: 800;
+    letter-spacing: .09em;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+.ri-section-heading h2 {
+    color: var(--ri-navy);
+    font-size: var(--ri-font-section);
+    letter-spacing: -.025em;
+    line-height: 1.25;
+    margin: 0;
+}
+.ri-section-heading p {
+    color: #52637a;
+    font-size: var(--ri-font-label);
+    line-height: 1.55;
+    margin: 0;
+    max-width: 72ch;
+}
 .ri-metric-grid,
 .ri-insight-grid,
 .ri-theme-grid,
 .ri-chart-grid {
     display: grid;
-    gap: var(--ri-space-4);
+    gap: var(--ri-card-gap);
     width: 100%;
 }
 .ri-metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -168,6 +206,14 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible {
     background: var(--ri-surface);
     padding: var(--ri-space-4);
     min-width: 0;
+}
+.ri-metric-card { min-height: 142px; }
+.ri-metric-card.ri-positive,
+.ri-metric-card.ri-negative,
+.ri-metric-card.ri-neutral,
+.ri-metric-card.ri-mixed {
+    background: var(--ri-surface);
+    border-color: var(--ri-border);
 }
 .ri-metric-card__label {
     color: var(--ri-navy);
@@ -193,14 +239,16 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible {
     margin: 0 0 var(--ri-space-2);
 }
 .ri-insight-panel ul { margin: 0; padding-left: 1.25rem; }
-.ri-insight-panel li { line-height: 1.6; }
+.ri-insight-panel li { line-height: 1.6; margin-bottom: var(--ri-space-1); }
 .ri-positive { color: var(--ri-positive); background: var(--ri-positive-bg); border-color: var(--ri-positive-border); }
 .ri-negative { color: var(--ri-negative); background: var(--ri-negative-bg); border-color: var(--ri-negative-border); }
 .ri-neutral { color: var(--ri-neutral); background: var(--ri-neutral-bg); border-color: var(--ri-neutral-border); }
 .ri-mixed { color: var(--ri-mixed); background: var(--ri-mixed-bg); border-color: var(--ri-mixed-border); }
+.ri-info { color: var(--ri-info); background: var(--ri-info-bg); border-color: var(--ri-info-border); }
 @media (max-width: 900px) {
     .ri-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .ri-theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ri-insight-grid { grid-template-columns: 1fr; }
     .ri-chart-grid { grid-template-columns: 1fr; }
     [data-testid="stHorizontalBlock"] { flex-wrap: wrap; gap: .7rem; }
     [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {
@@ -220,6 +268,7 @@ button:focus-visible, input:focus-visible, [role="button"]:focus-visible {
     .ri-insight-panel { border-radius: var(--ri-radius-card); }
     .ri-report-hero { padding: var(--ri-space-4); }
     .ri-report-hero__content { flex-direction: column; }
+    .ri-section-heading { margin-top: var(--ri-space-8); }
     .ri-process-strip { grid-template-columns: 1fr; }
     .ri-insight-grid,
     .ri-theme-grid { grid-template-columns: 1fr; }
@@ -245,6 +294,8 @@ _VISUALS = {
     "neutral": SentimentVisual("➖", "Neutral", "neutral", "#a16207", "#fffbeb", "#fcd34d"),
     "mixed": SentimentVisual("↔", "Mixed", "mixed", "#4f46e5", "#eef2ff", "#a5b4fc"),
 }
+
+_INFO_VISUAL = SentimentVisual("🎯", "Action", "info", "#1d4ed8", "#eff6ff", "#93c5fd")
 
 
 def metric_values(report: dict[str, Any]) -> tuple[str, str, str, str]:
@@ -457,10 +508,22 @@ def safe_metric_card_markup(label: Any, value: Any, detail: Any, semantic: str) 
     )
 
 
+def safe_section_heading_markup(eyebrow: Any, heading: Any, description: Any) -> str:
+    """Build one escaped heading block for a major report section."""
+
+    return (
+        '<header class="ri-section-heading">'
+        f'<span class="ri-section-heading__eyebrow">{html.escape(str(eyebrow))}</span>'
+        f"<h2>{html.escape(str(heading))}</h2>"
+        f"<p>{html.escape(str(description))}</p>"
+        "</header>"
+    )
+
+
 def safe_panel_markup(visual: SentimentVisual, heading: Any, items: list[Any]) -> str:
     """Build one escaped semantic insight panel and its unordered list."""
 
-    safe_visual = sentiment_visual(visual.semantic)
+    safe_visual = _INFO_VISUAL if visual.semantic == "info" else sentiment_visual(visual.semantic)
     safe_items = "".join(f"<li>{html.escape(str(item))}</li>" for item in items)
     return (
         f'<section class="ri-insight-panel ri-{safe_visual.semantic}">'
@@ -534,7 +597,14 @@ def _render_list(items: list[Any]) -> None:
 def _render_themes(themes: list[dict[str, Any]]) -> None:
     """Render escaped semantic theme cards in the responsive report grid."""
 
-    st.subheader("Recurring themes")
+    st.markdown(
+        safe_section_heading_markup(
+            "Theme analysis",
+            "Recurring themes",
+            "See which product experiences appear repeatedly and how customers feel about them.",
+        ),
+        unsafe_allow_html=True,
+    )
     if not themes:
         st.info("No recurring themes were returned.")
         return
@@ -591,7 +661,14 @@ def _render_report(report: dict[str, Any], collection: dict[str, Any]) -> None:
         unsafe_allow_html=True,
     )
 
-    st.subheader("Customer signals")
+    st.markdown(
+        safe_section_heading_markup(
+            "Review patterns",
+            "Customer signals",
+            "Compare sentiment and rating patterns across the analyzed review set.",
+        ),
+        unsafe_allow_html=True,
+    )
     chart_columns = st.columns(2)
     with chart_columns[0]:
         with st.container(border=True, key="ri_sentiment_chart_card"):
@@ -606,11 +683,19 @@ def _render_report(report: dict[str, Any], collection: dict[str, Any]) -> None:
     strengths = list(insights.get("strengths", [])) or ["No strengths were returned."]
     concerns = list(insights.get("weaknesses", [])) or ["No concerns were returned."]
     actions = list(insights.get("actions", [])) or ["No recommended actions were returned."]
+    st.markdown(
+        safe_section_heading_markup(
+            "Actionable insights",
+            "Customer priorities",
+            "Turn the strongest customer signals into focused product decisions.",
+        ),
+        unsafe_allow_html=True,
+    )
     insight_panels = "".join(
         (
             safe_panel_markup(_VISUALS["positive"], "Strengths", strengths),
             safe_panel_markup(_VISUALS["negative"], "Concerns", concerns),
-            safe_panel_markup(_VISUALS["mixed"], "Recommended actions", actions),
+            safe_panel_markup(_INFO_VISUAL, "Recommended actions", actions),
         )
     )
     st.markdown(f'<section class="ri-insight-grid">{insight_panels}</section>', unsafe_allow_html=True)
