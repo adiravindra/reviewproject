@@ -346,6 +346,10 @@ class DashboardFormattingTests(unittest.TestCase):
         report = sample_report()
         self.assertEqual(metric_values(report), ("3", "4.0 / 5", "66.7%", "Positive"))
         self.assertEqual(sentiment_rows(report)[0], {"Sentiment": "Positive", "Reviews": 2})
+        self.assertEqual(
+            [row["Sentiment"] for row in sentiment_rows(report)],
+            ["Positive", "Neutral", "Negative"],
+        )
         self.assertEqual(rating_rows(report)[4], {"Rating": "5 star", "Reviews": 1})
 
     def test_missing_average_rating_has_a_clear_display(self):
@@ -618,8 +622,8 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertEqual(
             sentiment_spec["encoding"]["color"]["scale"],
             {
-                "domain": ["Positive", "Neutral", "Negative", "Mixed"],
-                "range": ["#15803d", "#a16207", "#b91c1c", "#4f46e5"],
+                "domain": ["Positive", "Neutral", "Negative"],
+                "range": ["#15803d", "#a16207", "#b91c1c"],
             },
         )
         self.assertEqual(rating_spec["encoding"]["color"]["value"], "#2563eb")
@@ -879,7 +883,7 @@ class DashboardRuntimeTests(unittest.TestCase):
         self.assertEqual(rendered_specs[0]["height"], 260)
         self.assertEqual(
             rendered_specs[0]["encoding"]["color"]["scale"]["range"],
-            ["#15803d", "#a16207", "#b91c1c", "#4f46e5"],
+            ["#15803d", "#a16207", "#b91c1c"],
         )
         for spec in rendered_specs:
             serialized = json.dumps(spec)

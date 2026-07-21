@@ -300,6 +300,7 @@ _VISUALS = {
     "mixed": SentimentVisual("↔", "Mixed", "mixed", "#4f46e5", "#eef2ff", "#a5b4fc"),
 }
 
+_REVIEW_SENTIMENT_ORDER = ("positive", "neutral", "negative")
 _INFO_VISUAL = SentimentVisual("🎯", "Action", "info", "#1d4ed8", "#eff6ff", "#93c5fd")
 
 
@@ -392,7 +393,10 @@ def sentiment_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
     """Convert live sentiment counts into deterministic chart rows."""
 
     counts = report["metrics"].get("sentiment_counts", {})
-    return [{"Sentiment": sentiment_visual(name).label, "Reviews": int(counts.get(name, 0))} for name in _VISUALS]
+    return [
+        {"Sentiment": sentiment_visual(name).label, "Reviews": int(counts.get(name, 0))}
+        for name in _REVIEW_SENTIMENT_ORDER
+    ]
 
 
 def rating_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
@@ -405,15 +409,10 @@ def rating_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
 def sentiment_chart_spec(report: dict[str, Any]) -> dict[str, Any]:
     """Build a warning-free sentiment bar spec with explicit semantic colors."""
 
-    domain = ["Positive", "Neutral", "Negative", "Mixed"]
+    domain = [sentiment_visual(name).label for name in _REVIEW_SENTIMENT_ORDER]
     rows = sentiment_rows(report)
     review_domain = [0, max(1, *(row["Reviews"] for row in rows))]
-    colors = [
-        _VISUALS["positive"].foreground,
-        _VISUALS["neutral"].foreground,
-        _VISUALS["negative"].foreground,
-        _VISUALS["mixed"].foreground,
-    ]
+    colors = [_VISUALS[name].foreground for name in _REVIEW_SENTIMENT_ORDER]
     return {
         "data": {"values": rows},
         "mark": {"type": "bar", "cornerRadiusTopLeft": 4, "cornerRadiusTopRight": 4},
