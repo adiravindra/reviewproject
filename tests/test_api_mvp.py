@@ -16,6 +16,7 @@ from backend.app.models import (
     CollectionResult,
     HistoryItem,
     PublicError,
+    ReviewSentiment,
     Theme,
 )
 
@@ -464,23 +465,18 @@ class ApiTests(unittest.TestCase):
 class ApiContractTests(unittest.TestCase):
     """Cover response additions consumed by later API and history endpoints."""
 
-    def test_theme_requires_a_constrained_sentiment(self):
-        """Expose the sentiment needed to render each recurring theme."""
+    def test_theme_accepts_mixed_without_expanding_review_sentiment(self):
+        """Allow mixed themes while keeping deterministic review buckets three-state."""
 
         theme = Theme(
             name="Pour control",
             description="Reviewers discuss the precision and speed of the gooseneck pour.",
             mentions=3,
-            sentiment="positive",
+            sentiment="mixed",
         )
-        self.assertEqual(theme.sentiment, "positive")
+        self.assertEqual(theme.sentiment, "mixed")
         with self.assertRaises(ValidationError):
-            Theme(
-                name="Pour control",
-                description="Reviewers discuss the precision and speed of the gooseneck pour.",
-                mentions=3,
-                sentiment="mixed",
-            )
+            ReviewSentiment(review_id="r1", sentiment="mixed")
 
     def test_public_error_accepts_history_not_found(self):
         """Keep the explicit absent-history code inside the declared public schema."""

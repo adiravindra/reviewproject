@@ -32,9 +32,9 @@ def valid_insights(review_ids=None):
         themes=[
             {
                 "name": "Everyday audio",
-                "description": "Sound and practical daily use shape the feedback.",
+                "description": "Sound is strong while microphone quality is inconsistent.",
                 "mentions": 2,
-                "sentiment": "positive",
+                "sentiment": "mixed",
             }
         ],
         strengths=["Clear sound", "Comfortable fit"],
@@ -172,6 +172,7 @@ class AnalyzerTests(unittest.TestCase):
         self.assertIn("sentiment for every theme", factory.call_args.kwargs["system_prompt"].lower())
         self.assertEqual(fake_agent.invocations, 1)
         self.assertEqual(result.overall_sentiment, "positive")
+        self.assertEqual(result.themes[0].sentiment, "mixed")
 
         message = fake_agent.state["messages"][0]
         self.assertEqual(message["role"], "user")

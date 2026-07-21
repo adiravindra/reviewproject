@@ -20,9 +20,11 @@ SYSTEM_PROMPT = """You analyze customer reviews using only the supplied evidence
 Return the requested structured response without inventing facts or product details.
 Write a concise overall summary and choose overall sentiment from the schema.
 Return 3-6 concise recurring themes with evidence-based descriptions and approximate mention counts.
-Provide a positive, neutral, or negative sentiment for every theme.
+Provide a positive, neutral, negative, or mixed sentiment for every theme.
+Use mixed only when one theme contains meaningful positive and negative evidence.
 Return no more than five strengths, five weaknesses, and five actionable recommendations.
 For every submitted review ID, return exactly one sentiment entry, with no missing, duplicate, or unknown IDs.
+Keep each individual review sentiment positive, neutral, or negative.
 Use only the sentiment values permitted by the response schema.
 """
 
