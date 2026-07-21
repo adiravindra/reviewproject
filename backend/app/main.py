@@ -30,8 +30,14 @@ ANALYSIS_ERRORS = {
         503,
         "Groq credentials could not be validated. Analysis did not start; try again when Groq is reachable.",
     ),
-    "analysis_failed": (502, "The analysis could not be completed."),
-    "model_output_invalid": (502, "The AI analysis returned an invalid result."),
+    "analysis_failed": (
+        502,
+        "Groq could not complete the analysis. Your reviews are still available; try again.",
+    ),
+    "model_output_invalid": (
+        502,
+        "Groq returned an invalid analysis result. Your reviews are still available; try again.",
+    ),
     "history_failed": (500, "Local analysis history could not be updated."),
 }
 
