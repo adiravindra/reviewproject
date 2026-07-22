@@ -26,7 +26,9 @@ CREATE TABLE IF NOT EXISTS analysis_history (
     is_demo INTEGER NOT NULL,
     review_count INTEGER NOT NULL,
     overall_sentiment TEXT NOT NULL,
-    report_json TEXT NOT NULL
+    report_json TEXT NOT NULL,
+    platform TEXT,
+    provider TEXT
 )
 """
 
@@ -51,8 +53,8 @@ class HistoryStore:
                     """
                     INSERT INTO analysis_history (
                         created_at, source_url, source_title, extractor, is_demo,
-                        review_count, overall_sentiment, report_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        review_count, overall_sentiment, report_json, platform, provider
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         created_at,
@@ -63,6 +65,8 @@ class HistoryStore:
                         report.metrics.review_count,
                         report.insights.overall_sentiment,
                         report_json,
+                        report.source.platform,
+                        report.source.provider,
                     ),
                 )
                 return cursor.lastrowid
@@ -79,7 +83,7 @@ class HistoryStore:
                     """
                     SELECT
                         id, created_at, source_title, source_url, extractor, is_demo,
-                        review_count, overall_sentiment
+                        review_count, overall_sentiment, platform, provider
                     FROM analysis_history
                     ORDER BY id DESC
                     LIMIT ?
@@ -96,6 +100,8 @@ class HistoryStore:
                     is_demo=bool(row[5]),
                     review_count=row[6],
                     overall_sentiment=row[7],
+                    platform=row[8],
+                    provider=row[9],
                 )
                 for row in rows
             ]
@@ -131,6 +137,19 @@ class HistoryStore:
         try:
             with connection:
                 connection.execute(_SCHEMA)
+                self._migrate_additive_columns(connection)
                 yield connection
         finally:
             connection.close()
+
+    @staticmethod
+    def _migrate_additive_columns(connection: sqlite3.Connection) -> None:
+        """Add nullable provenance summaries to existing databases exactly once."""
+
+        columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(analysis_history)")
+        }
+        if "platform" not in columns:
+            connection.execute("ALTER TABLE analysis_history ADD COLUMN platform TEXT")
+        if "provider" not in columns:
+            connection.execute("ALTER TABLE analysis_history ADD COLUMN provider TEXT")

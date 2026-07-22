@@ -145,6 +145,8 @@ class ApiTests(unittest.TestCase):
             {
                 "/health",
                 "/api/collect",
+                "/api/import/options",
+                "/api/import",
                 "/api/demo",
                 "/api/analyze",
                 "/api/history",
@@ -178,7 +180,18 @@ class ApiTests(unittest.TestCase):
         demo_loader.assert_called_once_with()
         self.assertEqual(
             response.json()["source"],
-            {"url": None, "title": "Everyday Headphones", "extractor": "demo", "is_demo": True},
+            {
+                "url": None,
+                "title": "Everyday Headphones",
+                "extractor": "demo",
+                "is_demo": True,
+                "platform": "demo",
+                "provider": None,
+                "requested_count": None,
+                "retrieved_count": None,
+                "retrieved_at": None,
+                "cache_status": "not_applicable",
+            },
         )
 
     def test_analyze_rejects_provider_and_calls_no_service(self):

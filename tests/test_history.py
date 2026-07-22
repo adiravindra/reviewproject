@@ -13,14 +13,26 @@ from backend.app.history import HistoryStore
 from backend.app.models import AnalysisResponse, AgentInsights, Metrics, Review, SourceInfo
 
 
-def make_report(*, demo: bool = False, title: str = "Product reviews") -> AnalysisResponse:
+def make_report(
+    *,
+    demo: bool = False,
+    title: str = "Product reviews",
+    platform: str | None = None,
+    provider: str | None = None,
+) -> AnalysisResponse:
     """Build a complete validated report suitable for repository behavior tests."""
 
     source = SourceInfo(
         url=None if demo else "https://example.test/products/widget",
         title=title,
-        extractor="demo" if demo else "json_ld",
+        extractor="demo" if demo else ("provider_api" if provider else "json_ld"),
         is_demo=demo,
+        platform=platform or ("demo" if demo else "generic"),
+        provider=provider,
+        requested_count=2 if provider else None,
+        retrieved_count=2 if provider else None,
+        retrieved_at="2026-07-22T12:00:00+00:00" if provider else None,
+        cache_status="miss" if provider else "not_applicable",
     )
     return AnalysisResponse(
         source=source,
@@ -98,8 +110,40 @@ class HistoryStoreTests(unittest.TestCase):
                 "review_count",
                 "overall_sentiment",
                 "report_json",
+                "platform",
+                "provider",
             },
         )
+
+    def test_legacy_schema_migrates_additively_and_idempotently(self):
+        """Add nullable provenance columns without rewriting legacy rows."""
+
+        self.db_path.parent.mkdir(parents=True)
+        with closing(sqlite3.connect(self.db_path)) as connection:
+            with connection:
+                connection.execute(
+                    """
+                    CREATE TABLE analysis_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        created_at TEXT NOT NULL,
+                        source_url TEXT,
+                        source_title TEXT NOT NULL,
+                        extractor TEXT NOT NULL,
+                        is_demo INTEGER NOT NULL,
+                        review_count INTEGER NOT NULL,
+                        overall_sentiment TEXT NOT NULL,
+                        report_json TEXT NOT NULL
+                    )
+                    """
+                )
+        self.assertEqual(self.store.list_runs(), [])
+        self.assertEqual(self.store.list_runs(), [])
+        with closing(sqlite3.connect(self.db_path)) as connection:
+            columns = [
+                row[1] for row in connection.execute("PRAGMA table_info(analysis_history)")
+            ]
+        self.assertEqual(columns.count("platform"), 1)
+        self.assertEqual(columns.count("provider"), 1)
 
     def test_live_report_round_trips_and_restores_history_id(self):
         """Persist a validated live report and identify the restored saved row."""
@@ -141,6 +185,23 @@ class HistoryStoreTests(unittest.TestCase):
         self.assertEqual(items[0].review_count, 2)
         self.assertEqual(items[0].overall_sentiment, "mixed")
         self.assertEqual(items[1].source_url, "https://example.test/products/widget")
+
+    def test_provider_reports_round_trip_with_stable_summary_provenance(self):
+        """Persist Amazon provider labels in both report JSON and summaries."""
+
+        run_id = self.store.save(
+            make_report(
+                title="Amazon product B000000000",
+                platform="amazon",
+                provider="Outscraper",
+            )
+        )
+
+        item = self.store.list_runs()[0]
+        restored = self.store.get(run_id)
+
+        self.assertEqual((item.platform, item.provider), ("amazon", "Outscraper"))
+        self.assertEqual((restored.source.platform, restored.source.provider), ("amazon", "Outscraper"))
 
     def test_list_runs_honors_a_bounded_limit(self):
         """Return only the requested number of newest history summary rows."""
