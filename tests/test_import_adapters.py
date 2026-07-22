@@ -144,7 +144,7 @@ class ImportAdapterTests(unittest.TestCase):
         cases = (
             (FakeResponse(401, {}), "provider_auth_failed"),
             (FakeResponse(402, {}), "provider_quota_exhausted"),
-            (FakeResponse(429, {}), "provider_quota_exhausted"),
+            (FakeResponse(429, {}), "provider_unavailable"),
             (FakeResponse(503, {}), "provider_unavailable"),
             (requests.Timeout("secret timeout"), "import_timeout"),
             (requests.ConnectionError("secret socket"), "provider_unavailable"),

@@ -15,6 +15,7 @@ class ImportPolicyTests(unittest.TestCase):
         for url in (
             "https://www.amazon.com/dp/B000000000",
             "https://amazon.com/gp/product/1612680194?tag=example",
+            "https://amazon.com/gp/aw/d/B000000000",
         ):
             with self.subTest(url=url):
                 source = validate_import_source("amazon", url)
@@ -27,6 +28,7 @@ class ImportPolicyTests(unittest.TestCase):
         for url in (
             "https://www.google.com/maps/place/Test+Cafe/@41.0,-87.0,15z",
             "https://google.com/maps?cid=123456789",
+            "https://maps.google.com/?cid=123456789",
             "https://maps.app.goo.gl/AbCdEf123",
         ):
             with self.subTest(url=url):

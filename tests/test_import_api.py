@@ -94,6 +94,19 @@ class ImportApiTests(unittest.TestCase):
         service.options.assert_called_once_with()
         service.import_reviews.assert_called_once()
 
+    def test_default_options_need_no_credentials_or_provider_request(self):
+        """List sources safely before accounts or environment values exist."""
+
+        response = TestClient(
+            create_app(history_store=FakeHistoryStore())
+        ).get("/api/import/options")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [item["key"] for item in response.json()["platforms"]],
+            ["amazon", "google_maps"],
+        )
+
     def test_validation_errors_stop_before_service_with_specific_codes(self):
         """Classify platform, limit, and URL request validation safely."""
 

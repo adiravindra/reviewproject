@@ -860,6 +860,10 @@ def main() -> None:
 
     st.title("Review Intelligence")
     st.caption("Import normalized public reviews, inspect the evidence, then analyze customer signals with Groq.")
+    st.caption(
+        "Amazon and Google Maps imports use unofficial scraping services. "
+        "You are responsible for permitted use and retention."
+    )
     if (
         "import_options" not in st.session_state
         and "collection" not in st.session_state

@@ -35,7 +35,10 @@ FORBIDDEN_GROQ_ONLY_TERMS = (
 PROVIDER_SELECTION_PATTERNS = (
     re.compile(r"provider\s+(?:selection|selector)", re.IGNORECASE),
     re.compile(r"(?:select|choose)\s+(?:an?\s+)?(?:ai\s+)?provider", re.IGNORECASE),
-    re.compile(r"st\.(?:radio|selectbox).*provider", re.IGNORECASE | re.DOTALL),
+    re.compile(
+        r"st\.(?:radio|selectbox)\s*\(\s*[\"'](?:ai\s+)?provider[\"']",
+        re.IGNORECASE | re.DOTALL,
+    ),
 )
 
 

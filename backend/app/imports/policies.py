@@ -8,7 +8,10 @@ from urllib.parse import parse_qs, urlsplit, urlunsplit
 from backend.app.imports.contracts import ReviewImportError
 
 
-_ASIN_PATH = re.compile(r"/(?:dp|gp/product)/([A-Z0-9]{10})(?:[/?]|$)", re.IGNORECASE)
+_ASIN_PATH = re.compile(
+    r"/(?:dp|gp/product|gp/aw/d)/([A-Z0-9]{10})(?:[/?]|$)",
+    re.IGNORECASE,
+)
 _GOOGLE_HOSTS = {"google.com", "www.google.com", "maps.google.com"}
 
 
@@ -56,7 +59,11 @@ def validate_import_source(platform: str, source_url: str) -> ValidatedImportSou
     elif host in _GOOGLE_HOSTS:
         path = parsed.path.rstrip("/")
         has_place_path = path.startswith("/maps/place/") or path.startswith("/maps/reviews/")
-        has_cid = path == "/maps" and bool(parse_qs(parsed.query).get("cid"))
+        has_cid = (
+            path in {"", "/maps"}
+            and bool(parse_qs(parsed.query).get("cid"))
+            and host in {"google.com", "www.google.com", "maps.google.com"}
+        )
         if not (has_place_path or has_cid):
             raise ReviewImportError("invalid_import_url")
     else:

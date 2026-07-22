@@ -22,8 +22,10 @@ def classify_provider_status(status_code: int) -> None:
         return
     if status_code in {401, 403}:
         raise ReviewImportError("provider_auth_failed")
-    if status_code in {402, 429}:
+    if status_code == 402:
         raise ReviewImportError("provider_quota_exhausted")
+    if status_code == 429:
+        raise ReviewImportError("provider_unavailable")
     if status_code in {408, 504}:
         raise ReviewImportError("import_timeout")
     if status_code >= 500:

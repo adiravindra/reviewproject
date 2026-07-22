@@ -1,13 +1,13 @@
 # Review Intelligence
 
-Review Intelligence is a local, presentation-ready MVP for turning a public product or review-page URL into an evidence-backed review report. It keeps the user in control of the flow: extract reviews first, inspect the evidence, then request Groq analysis.
+Review Intelligence is a local, presentation-ready MVP for turning public reviews into an evidence-backed report. It keeps the user in control of the flow: import or extract reviews first, inspect the evidence, then request Groq analysis.
 
 The application runs a FastAPI backend and a Streamlit dashboard under one local supervisor. It is Groq-only: there is no model-choice control in the interface and no credential field in the dashboard.
 
 ## What the MVP does
 
-1. Accepts one public `http` or `https` review-page URL.
-2. Collects review-like content from JSON-LD first, then conservative static HTML review cards.
+1. Imports a small review set from one Amazon product URL or Google Maps place URL.
+2. Preserves the existing generic static collector, which reads JSON-LD first and conservative HTML review cards second.
 3. Shows the normalized reviews and source metadata before any AI request.
 4. Validates Groq access, analyzes the displayed evidence, and calculates metrics locally.
 5. Presents labeled positive, negative, neutral, and mixed findings with accessible colors and icons.
@@ -55,6 +55,8 @@ GROQ_API_KEY=replace-with-your-local-secret
 REVIEWINSIGHT_API_URL=http://127.0.0.1:8000
 GROQ_API_KEY=
 REVIEWINSIGHT_GROQ_MODEL=llama-3.3-70b-versatile
+OUTSCRAPER_API_KEY=
+APIFY_API_TOKEN=
 ```
 
 `REVIEWINSIGHT_GROQ_MODEL` is optional; when it is unset, the application uses the existing Llama Versatile default, `llama-3.3-70b-versatile`. Do not put credentials in source code, screenshots, browser fields, or logs.
@@ -71,9 +73,9 @@ If the complete application does not become ready within 30 seconds, startup ret
 
 ## Dashboard flow
 
-1. Use the bordered extraction workspace to paste a public product or review-page URL and select **Extract reviews**. The adjacent **Use bundled demo data** action is always explicit.
-2. Follow the three-step **How it works** strip: extract, review evidence, then analyze.
-3. Inspect the grouped source summary, extractor label, ratings, dates, and written evidence before analysis. Extraction does not call Groq, and this evidence remains visible throughout the pre-analysis stage.
+1. Select Amazon or Google Maps, paste one allowed product/place URL, choose a limit of 5, 10, or 12 for Amazon or 5, 10, or 20 for Google Maps, then select **Import reviews**. The adjacent **Use bundled demo data** action remains explicit.
+2. Follow the three-step **How it works** strip: import, review evidence, then analyze.
+3. Inspect the original source, provider, requested count, actual usable count, retrieval time, cache state, ratings, dates, and written evidence before analysis. Import does not call Groq.
 4. Select **Analyze with Groq** only when the evidence is ready. The backend validates `GROQ_API_KEY` before model work.
 5. Once a report exists, scan it in order: source and overall sentiment, four metric cards, executive summary, sentiment and rating charts, recurring themes, strengths, concerns, and recommended actions. At this stage, the source and review evidence is retained only in the collapsed **Supporting review evidence** section.
 6. Use the sidebar to refresh local history and load a saved report.
@@ -87,13 +89,15 @@ On desktop, the extraction and demo actions share a row, the metric cards use fo
 | Endpoint | Purpose | Calls Groq? |
 |---|---|---:|
 | `GET /health` | Process-readiness check. | No |
+| `GET /api/import/options` | Returns registered source labels and small limits without provider work. | No |
+| `POST /api/import` | Imports or returns cached Amazon/Google Maps evidence. | No |
 | `POST /api/collect` | Accepts `{"url": "https://..."}` and returns normalized live evidence. | No |
 | `GET /api/demo` | Returns the bundled, explicitly labeled demo collection. | No |
 | `POST /api/analyze` | Accepts a previously collected `source` and `reviews`; validates Groq, analyzes, and saves the report. | Yes |
 | `GET /api/history` | Returns newest-first local history summaries. | No |
 | `GET /api/history/{run_id}` | Returns one saved local report. | No |
 
-Successful reports are stored by FastAPI in `data/review_history.db`. The generated `data/` directory is local and ignored by Git; deleting that database clears saved history without changing bundled demo data.
+Successful reports are stored by FastAPI in `data/review_history.db`. Transient normalized imports are stored separately in `data/review_import_cache.db` for 30 days. The generated `data/` directory is local and ignored by Git.
 
 ## Safe errors
 
@@ -129,9 +133,38 @@ Credentials, authorization headers, raw AI responses, upstream response bodies, 
 - Public destinations are checked before every request and redirect; at least two unique reviews are required.
 - Pagination, authenticated pages, universal website support, queues, cloud deployment, and accounts are intentionally outside this MVP.
 
+## External setup for live imports
+
+Automated tests and bundled demo use require no provider account. Before the first live request for a platform:
+
+- **Amazon:** create an Outscraper account, obtain an Outscraper API key, confirm Amazon Reviews API access, and set OUTSCRAPER_API_KEY in the local .env or process environment. Outscraper currently publishes the first 500 reviews per 30-day period as free. Keep the account in a prepaid/non-overage arrangement if available and check current pricing before enabling it.
+- **Google Maps:** create an Apify account, obtain an Apify API token from **Settings / API & Integrations**, and set APIFY_API_TOKEN. Apify's current free plan is $0, needs no payment card, includes $5 of non-rollover monthly usage, and hard-stops when exhausted. If intentionally using a paid plan, configure the lowest practical platform spending limit first.
+- **Actor setup:** no Actor copy, task, schedule, build, webhook, or custom Actor ID is required. ReviewInsight calls public Actor compass/google-maps-reviews-scraper directly with one URL, the selected limit, most-relevant ordering, Google-only origin, English output, and personalData: false.
+- **Analysis:** GROQ_API_KEY remains necessary only after import when **Analyze with Groq** is selected.
+
+Do not perform a manual live smoke request until the relevant account, key/token, API or Actor availability, free-plan/billing/spending-limit configuration, and environment value have been confirmed. The application never asks users for Amazon or Google account credentials, browser cookies or session tokens.
+
+## Import cache and usage controls
+
+Provider results are cached locally for 30 days. Repeating the same import uses normalized cached evidence without contacting the provider. **Refresh from source** is the only way to bypass a live entry and warns that it may consume free-tier usage. Page loads, Streamlit reruns, history operations, and analysis never refresh provider data. A failed refresh preserves the displayed evidence and prior cache entry.
+
+- Amazon uses Outscraper for one amazon.com product, supports 5, 10, or 12 reviews, and never paginates. Twenty uncached 10-review imports use about 200 of the published 500-review allowance.
+- Google Maps uses one synchronous Apify Actor run and supports 5, 10, or 20 reviews. Twenty maximum-size imports request at most 400 reviews. At the currently advertised $0.30 per 1,000 reviews, the review-event portion is about $0.12; Actor compute, storage, proxy, and transfer charges also use the $5 allowance.
+- There is no pagination, background import, schedule, webhook, automatic retry, or application-side monthly quota ledger.
+
+These are planning estimates, not billing guarantees. Provider pricing and availability can change.
+
+## Unofficial providers, terms, privacy, and retention
+
+Outscraper and the Apify Actor are unofficial scraping services. Their availability does not grant ReviewInsight or its users rights to copy, analyze, retain, redistribute, or commercialize source content. Users are responsible for confirming their use and retention are permitted. Review the [Amazon Conditions of Use](https://www.amazon.com/gp/help/customer/display.html?nodeId=GLSBYFE9MGKKQXXM) and [Google Maps Additional Terms](https://maps.google.com/help/terms_maps/?refresh=1). This documentation does not claim blanket legal permission or endorsement by Amazon or Google.
+
+ReviewInsight retains the original public URL and visible Amazon via Outscraper or Google Maps via Apify provenance. It discards provider reviewer names, profiles, avatars, media, owner responses, and raw response bodies. Review text can still contain personal information and is sent to Groq only after explicit analysis. The normalized cache expires after 30 days, while successful report history retains evidence until the operator deletes the local history database.
+
+Apify may retain Actor run and dataset data under its provider-side retention policy. Version one does not programmatically delete those runs or datasets; operators may remove them manually in Apify Console. This proof of concept is for small local evaluation, not bulk redistribution.
+
 ## Test and validate
 
-Automated tests use fixtures and fakes, so they do not spend Groq quota or depend on external review pages:
+Automated tests use saved provider fixtures and fakes, so they do not spend Outscraper, Apify, Amazon, Google Maps, or Groq quota and do not depend on external review pages:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v

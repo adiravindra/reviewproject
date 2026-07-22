@@ -3,6 +3,7 @@
 import inspect
 import json
 import unittest
+from contextlib import nullcontext
 from unittest.mock import patch
 
 import requests
@@ -820,6 +821,51 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertEqual(calls, [(collection, "http://api")])
         self.assertEqual(list(inspect.signature(analysis_call).parameters), ["collection", "base_url", "request"])
 
+    def test_failed_refresh_preserves_displayed_collection(self):
+        """Keep the last good evidence when an explicit provider refresh fails."""
+
+        previous = {"source": {"provider": "Outscraper"}, "reviews": [{"id": "r1"}]}
+
+        class StateRecorder:
+            """Provide the Streamlit state and messages used by the helper."""
+
+            def __init__(self):
+                """Initialize previous state and captured errors."""
+
+                self.session_state = {"collection": previous}
+                self.errors = []
+
+            def spinner(self, _label):
+                """Return a no-op spinner context."""
+
+                return nullcontext()
+
+            def error(self, message):
+                """Capture the safe provider error."""
+
+                self.errors.append(message)
+
+        recorder = StateRecorder()
+        with (
+            patch.object(streamlit_app, "st", recorder),
+            patch.object(streamlit_app, "check_health", return_value=True),
+            patch.object(
+                streamlit_app,
+                "request_import",
+                side_effect=ApiClientError("provider_unavailable", "Provider unavailable."),
+            ),
+        ):
+            streamlit_app._import_collection(
+                "http://api",
+                "amazon",
+                "https://www.amazon.com/dp/B000000000",
+                5,
+                refresh=True,
+            )
+
+        self.assertIs(recorder.session_state["collection"], previous)
+        self.assertEqual(recorder.errors, ["Provider unavailable."])
+
     def test_staged_ui_source_removes_retired_controls_and_keeps_explicit_demo(self):
         """Guard the staged flow against obsolete controls and implicit demo recovery."""
 
@@ -834,6 +880,8 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertIn('"Import reviews"', source)
         self.assertIn('"Refresh from source"', source)
         self.assertIn("may consume provider free-tier usage", source)
+        self.assertIn("unofficial scraping services", source)
+        self.assertIn("responsible for permitted use and retention", source)
         self.assertIn("DEMO DATA", source)
         self.assertIn('st.expander("Supporting review evidence"', source)
         self.assertIn("Executive summary", source)

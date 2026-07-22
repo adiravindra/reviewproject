@@ -16,6 +16,7 @@ Google Chrome or another local browser
   └── Streamlit HTTP client
         └── FastAPI JSON API
               ├── static collector
+              ├── review import service and isolated cache
               ├── Groq analysis boundary
               └── SQLite history store
 ```
@@ -51,6 +52,20 @@ The dashboard never imports backend services directly. Streamlit and FastAPI sha
 `GET /api/demo` is a separate, deliberate path that loads the bundled local collection. It does not run after a live collection error, and its `is_demo` metadata keeps `🧪 DEMO DATA` visible throughout the dashboard.
 
 The opening workspace keeps live extraction and explicit demo collection side by side on desktop and explains the sequence with a three-step **How it works** strip. Loading demo data avoids a request to a live review page, but a later **Analyze with Groq** action follows the same credential-validation and provider-network path as live evidence.
+
+## Provider import boundary
+
+The dashboard first loads choices from `GET /api/import/options`, which does not check credentials or contact a provider. One explicit `POST /api/import` selects a replaceable adapter through the registry: Amazon uses Outscraper with limits 5/10/12, while Google Maps uses Apify Actor `compass/google-maps-reviews-scraper` with limits 5/10/20.
+
+`ReviewImportService` validates the selected URL, checks `data/review_import_cache.db`, invokes one adapter only on a miss or explicit refresh, normalizes the response, and returns the existing collection contract with source provenance. The cache retains normalized evidence for 30 days and isolates platform, provider, normalization contract, source, limit, and ordering.
+
+Adapters read only the selected backend credential: `OUTSCRAPER_API_KEY` or `APIFY_API_TOKEN`. The Apify request sets `personalData: false`, Google-only review origin, and most-relevant ordering. Both adapters discard reviewer identities, profiles, avatars, media, owner responses, and raw provider responses. They never accept source-site credentials, cookies, browser state, or session tokens.
+
+Only **Refresh from source** bypasses a live cache entry. There are no automatic retries, background refreshes, pagination, polling, schedules, or webhooks. A failed refresh preserves the prior cache entry and displayed evidence. Import never invokes Groq or history.
+
+Outscraper and Apify are unofficial scraping services. Apify provider-side retention may apply to Actor runs and datasets; version one does not automatically delete them. Report history intentionally remains a longer-lived operator-managed snapshot.
+
+The existing `POST /api/collect` static JSON-LD/HTML endpoint remains available for compatibility but is not used by the Amazon/Google source choices.
 
 ## Groq boundary
 
@@ -109,6 +124,8 @@ Each successful report is serialized as validated JSON and saved atomically with
 | Method and path | Input | Output | Side effects |
 |---|---|---|---|
 | `GET /health` | none | `{"status":"ok"}` | none |
+| `GET /api/import/options` | none | source labels and low limits | no provider call |
+| `POST /api/import` | platform, URL, limit, refresh | `CollectionResult` | cache; one provider call on miss/refresh |
 | `POST /api/collect` | public URL | `CollectionResult` | static HTTP only |
 | `GET /api/demo` | none | labeled demo `CollectionResult` | reads bundled JSON only |
 | `POST /api/analyze` | validated source and 2–40 reviews | `AnalysisResponse` | Groq validation, one analysis, SQLite save |
@@ -119,6 +136,8 @@ Each successful report is serialized as validated JSON and saved atomically with
 
 - `run_app.py` — project environment loading, process supervision, readiness polling, and browser-open attempt.
 - `backend/app/collector.py` — URL safety, bounded static retrieval, JSON-LD-first extraction, fallback markup, and normalization.
+- `backend/app/imports/` — adapter protocol, URL policy, normalization, registry, and import orchestration.
+- `backend/app/import_cache.py` — isolated 30-day normalized import cache.
 - `backend/app/credentials.py` — Groq key lookup and safe pre-analysis validation.
 - `backend/app/analyzer.py` — one structured Groq invocation and result validation.
 - `backend/app/service.py` — ordered validation, analysis, and deterministic metrics.
