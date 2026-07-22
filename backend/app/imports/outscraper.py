@@ -15,7 +15,7 @@ from backend.app.imports.contracts import (
 
 OUTSCRAPER_ENDPOINT = "https://api.outscraper.com/amazon-reviews"
 OUTSCRAPER_TIMEOUT = (5, 30)
-_FIELDS = "query,product_asin,title,body,rating,date,product_url"
+_FIELDS = "product_asin,title,body,rating,date"
 
 
 class OutscraperAmazonAdapter:

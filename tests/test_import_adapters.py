@@ -86,7 +86,10 @@ class ImportAdapterTests(unittest.TestCase):
         self.assertEqual(kwargs["params"]["query"], "https://www.amazon.com/dp/B000000000")
         self.assertEqual(kwargs["params"]["limit"], 5)
         self.assertEqual(kwargs["params"]["async"], "false")
-        self.assertNotIn("author", kwargs["params"]["fields"])
+        self.assertEqual(
+            kwargs["params"]["fields"],
+            "product_asin,title,body,rating,date",
+        )
         self.assertEqual(result.source_key, "B000000000")
         self.assertEqual(len(result.reviews), 2)
         self.assertNotIn("discard-reviewer-marker", repr(result))
