@@ -83,6 +83,50 @@ def request_collection(url: str, base_url: str, *, session=requests) -> dict[str
     return _decode_success(response, lambda payload: isinstance(payload, dict))
 
 
+def request_import_options(base_url: str, *, session=requests) -> dict[str, Any]:
+    """Load registered import choices without contacting a provider."""
+
+    endpoint = f"{base_url.rstrip('/')}/api/import/options"
+    response = _perform_request(lambda: session.get(endpoint, timeout=5))
+    return _decode_success(
+        response,
+        lambda payload: (
+            isinstance(payload, dict)
+            and isinstance(payload.get("platforms"), list)
+            and all(isinstance(item, dict) for item in payload["platforms"])
+        ),
+    )
+
+
+def request_import(
+    platform: str,
+    url: str,
+    limit: int,
+    refresh: bool,
+    base_url: str,
+    *,
+    session=requests,
+) -> dict[str, Any]:
+    """Request one explicit cached provider import."""
+
+    endpoint = f"{base_url.rstrip('/')}/api/import"
+    payload = {
+        "platform": platform,
+        "url": url,
+        "limit": limit,
+        "refresh": refresh,
+    }
+    response = _perform_request(lambda: session.post(endpoint, json=payload, timeout=65))
+    return _decode_success(
+        response,
+        lambda decoded: (
+            isinstance(decoded, dict)
+            and isinstance(decoded.get("source"), dict)
+            and isinstance(decoded.get("reviews"), list)
+        ),
+    )
+
+
 def request_demo(base_url: str, *, session=requests) -> dict[str, Any]:
     """Load the deterministic demo collection through the backend boundary."""
 

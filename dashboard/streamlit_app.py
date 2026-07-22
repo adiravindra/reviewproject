@@ -17,6 +17,8 @@ from dashboard.api_client import (
     request_demo,
     request_history,
     request_history_report,
+    request_import,
+    request_import_options,
 )
 
 
@@ -338,8 +340,46 @@ def format_history_timestamp(value: Any) -> str:
 def _extractor_label(extractor: Any) -> str:
     """Turn known extractor identifiers into reader-friendly provenance text."""
 
-    labels = {"json_ld": "JSON-LD", "html_cards": "HTML fallback", "demo": "Demo data"}
+    labels = {
+        "json_ld": "JSON-LD",
+        "html_cards": "HTML fallback",
+        "provider_api": "Provider API",
+        "demo": "Demo data",
+    }
     return labels.get(str(extractor), "Unknown extractor")
+
+
+def source_details(source: dict[str, Any], *, review_count: int) -> list[str]:
+    """Build readable provenance for generic, demo, or provider evidence."""
+
+    details: list[str] = []
+    if source.get("url"):
+        details.append(f"Source: {source['url']}")
+    if source.get("extractor") == "provider_api":
+        platform = {
+            "amazon": "Amazon",
+            "google_maps": "Google Maps",
+        }.get(str(source.get("platform")), "Imported reviews")
+        provider = str(source.get("provider") or "Unknown provider")
+        details.append(f"{platform} via {provider}")
+        actual = source.get("retrieved_count", review_count)
+        requested = source.get("requested_count")
+        details.append(
+            f"Retrieved {actual} usable written reviews - Requested {requested}"
+        )
+        if source.get("retrieved_at"):
+            details.append(f"Fetched: {format_history_timestamp(source['retrieved_at'])}")
+        cache_label = {
+            "miss": "Fresh import",
+            "hit": "Cached result",
+            "refresh": "Explicit refresh",
+        }.get(str(source.get("cache_status")))
+        if cache_label:
+            details.append(cache_label)
+    else:
+        details.append(f"Extractor: {_extractor_label(source.get('extractor'))}")
+        details.append(f"Reviews: {review_count}")
+    return details
 
 
 def review_rows(collection: dict[str, Any], report: dict[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -378,7 +418,8 @@ def history_option(item: dict[str, Any]) -> str:
     title = str(item.get("source_title", item.get("source", "Untitled source")))
     sentiment = sentiment_visual(str(item.get("overall_sentiment", "neutral"))).label
     demo = " · 🧪 DEMO DATA" if item.get("is_demo") is True else ""
-    return f"{created} · {title} · {sentiment}{demo}"
+    provider = f" · {item['provider']}" if item.get("provider") else ""
+    return f"{created} · {title}{provider} · {sentiment}{demo}"
 
 
 def analysis_call(
@@ -575,9 +616,7 @@ def _render_source(collection: dict[str, Any]) -> None:
 
     source = collection.get("source", {})
     st.subheader(str(source.get("title", "Extracted reviews")))
-    details = [f"Extractor: {_extractor_label(source.get('extractor'))}", f"Reviews: {len(collection.get('reviews', []))}"]
-    if source.get("url"):
-        details.insert(0, f"Source: {source['url']}")
+    details = source_details(source, review_count=len(collection.get("reviews", [])))
     st.caption(" · ".join(details))
 
 
@@ -641,14 +680,11 @@ def _render_report(report: dict[str, Any], collection: dict[str, Any]) -> None:
     overall = sentiment_visual(str(insights.get("overall_sentiment", "neutral")))
     report_reviews = report.get("reviews", collection.get("reviews", []))
     evidence_collection = {"source": source, "reviews": report_reviews}
-    source_details = [
-        f"Extractor: {_extractor_label(source.get('extractor'))}",
-        f"Reviews: {len(report_reviews)}",
-    ]
-    if source.get("url"):
-        source_details.insert(0, f"Source: {source['url']}")
+    report_source_details = source_details(source, review_count=len(report_reviews))
     safe_source_title = html.escape(str(source.get("title", "Review analysis")))
-    safe_source_details = " · ".join(html.escape(str(detail)) for detail in source_details)
+    safe_source_details = " · ".join(
+        html.escape(str(detail)) for detail in report_source_details
+    )
     st.markdown(
         '<section class="ri-report-hero"><div class="ri-report-hero__content">'
         f"<div><h2>{safe_source_title}</h2><p>{safe_source_details}</p></div>"
@@ -731,18 +767,56 @@ def _load_history(base_url: str) -> None:
         st.error(exc.message)
 
 
-def _new_collection(base_url: str, url: str | None = None) -> None:
-    """Run an explicit extraction or demo request and retain state only on success."""
+def _new_collection(base_url: str) -> None:
+    """Load explicit demo data and replace prior state only after success."""
 
-    st.session_state.pop("collection", None)
-    st.session_state.pop("latest_report", None)
     if not check_health(base_url):
         _unavailable()
         return
     try:
-        with st.spinner("Extracting normalized public reviews…"):
-            collection = request_collection(url, base_url) if url is not None else request_demo(base_url)
+        with st.spinner("Loading bundled demo reviews…"):
+            collection = request_demo(base_url)
         st.session_state["collection"] = collection
+        st.session_state.pop("latest_report", None)
+    except BackendUnavailable:
+        _unavailable()
+    except ApiClientError as exc:
+        st.error(exc.message)
+
+
+def _import_collection(
+    base_url: str,
+    platform: str,
+    url: str,
+    limit: int,
+    *,
+    refresh: bool,
+) -> None:
+    """Import or refresh once while preserving the last good state on failure."""
+
+    if not check_health(base_url):
+        _unavailable()
+        return
+    try:
+        label = "Refreshing reviews from source…" if refresh else "Importing normalized reviews…"
+        with st.spinner(label):
+            collection = request_import(platform, url, limit, refresh, base_url)
+        st.session_state["collection"] = collection
+        st.session_state.pop("latest_report", None)
+    except BackendUnavailable:
+        _unavailable()
+    except ApiClientError as exc:
+        st.error(exc.message)
+
+
+def _load_import_options(base_url: str) -> None:
+    """Load provider-neutral source choices without triggering a scrape."""
+
+    if not check_health(base_url):
+        _unavailable()
+        return
+    try:
+        st.session_state["import_options"] = request_import_options(base_url)
     except BackendUnavailable:
         _unavailable()
     except ApiClientError as exc:
@@ -778,23 +852,64 @@ def _render_history(base_url: str) -> None:
 
 
 def main() -> None:
-    """Coordinate staged extraction, deliberate demo use, analysis, and history loading."""
+    """Coordinate staged import, deliberate demo use, analysis, and history loading."""
 
     _configure_page()
     base_url = os.getenv("REVIEWINSIGHT_API_URL", "http://127.0.0.1:8000")
     _render_history(base_url)
 
     st.title("Review Intelligence")
-    st.caption("Extract normalized public reviews, inspect the evidence, then analyze customer signals with Groq.")
-    with st.form("review-extraction-form"):
-        url = st.text_input("Review page URL", placeholder="https://example.com/product")
+    st.caption("Import normalized public reviews, inspect the evidence, then analyze customer signals with Groq.")
+    if (
+        "import_options" not in st.session_state
+        and "collection" not in st.session_state
+        and "latest_report" not in st.session_state
+    ):
+        _load_import_options(base_url)
+    platforms = st.session_state.get("import_options", {}).get("platforms", [])
+    imported = False
+    demo_selected = False
+    selected_platform: dict[str, Any] | None = None
+    url = ""
+    limit = 5
+    with st.form("review-import-form"):
+        if platforms:
+            selected_index = st.selectbox(
+                "Review source",
+                range(len(platforms)),
+                format_func=lambda index: str(platforms[index].get("label", "Review source")),
+            )
+            selected_platform = platforms[int(selected_index)]
+            platform_key = str(selected_platform.get("key", "amazon"))
+            url_label = "Amazon product URL" if platform_key == "amazon" else "Google Maps place URL"
+            placeholder = (
+                "https://www.amazon.com/dp/B000000000"
+                if platform_key == "amazon"
+                else "https://www.google.com/maps/place/..."
+            )
+            url = st.text_input(url_label, placeholder=placeholder)
+            limits = [int(value) for value in selected_platform.get("limits", [5])]
+            limit = int(st.selectbox("Review limit", limits, index=min(1, len(limits) - 1)))
+        else:
+            st.info("Import choices are unavailable until the backend is reachable.")
         action_columns = st.columns(2)
         with action_columns[0]:
-            extracted = st.form_submit_button("Extract reviews", type="primary", width="stretch")
+            imported = st.form_submit_button(
+                "Import reviews",
+                type="primary",
+                width="stretch",
+                disabled=not bool(platforms),
+            )
         with action_columns[1]:
             demo_selected = st.form_submit_button("Use bundled demo data", width="stretch")
-    if extracted:
-        _new_collection(base_url, url.strip())
+    if imported and selected_platform is not None:
+        _import_collection(
+            base_url,
+            str(selected_platform["key"]),
+            url.strip(),
+            limit,
+            refresh=False,
+        )
     if demo_selected:
         _new_collection(base_url)
 
@@ -803,7 +918,7 @@ def main() -> None:
         """
         <section class="ri-process-strip">
             <div class="ri-process-step"><span class="ri-process-step__number">1</span>
-                <div><strong>Extract</strong><p>Collect normalized public reviews from the product page.</p></div>
+                <div><strong>Import</strong><p>Retrieve a small cached review set from the selected source.</p></div>
             </div>
             <div class="ri-process-step"><span class="ri-process-step__number">2</span>
                 <div><strong>Review evidence</strong><p>Inspect the source and normalized review text.</p></div>
@@ -825,6 +940,18 @@ def main() -> None:
                 _demo_notice()
             _render_source(collection)
             _render_evidence(collection)
+            if source.get("extractor") == "provider_api":
+                st.caption(
+                    "Refresh from source contacts the provider and may consume provider free-tier usage."
+                )
+                if st.button("Refresh from source", width="stretch"):
+                    _import_collection(
+                        base_url,
+                        str(source.get("platform", "")),
+                        str(source.get("url", "")),
+                        int(source.get("requested_count", len(collection.get("reviews", [])))),
+                        refresh=True,
+                    )
             if report is None and st.button("Analyze with Groq", type="primary", width="stretch"):
                 if not check_health(base_url):
                     _unavailable()

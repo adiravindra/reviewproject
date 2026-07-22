@@ -18,6 +18,8 @@ from dashboard.api_client import (
     request_demo,
     request_history,
     request_history_report,
+    request_import,
+    request_import_options,
 )
 from dashboard.streamlit_app import (
     DASHBOARD_CSS,
@@ -30,6 +32,7 @@ from dashboard.streamlit_app import (
     safe_theme_card_markup,
     sentiment_rows,
     sentiment_visual,
+    source_details,
 )
 
 
@@ -235,6 +238,57 @@ class DashboardClientTests(unittest.TestCase):
         session = FakeSession(post_responses={"http://127.0.0.1:8000/api/collect": FakeResponse(collection)})
         self.assertEqual(request_collection("https://example.com", "http://127.0.0.1:8000/", session=session), collection)
         self.assertEqual(session.calls, [("post", "http://127.0.0.1:8000/api/collect", {"url": "https://example.com"}, 15)])
+
+    def test_import_options_and_import_use_provider_neutral_contracts(self):
+        """Load choices cheaply and give imports a bounded Actor-sized timeout."""
+
+        options = {
+            "platforms": [
+                {"key": "amazon", "label": "Amazon product", "limits": [5, 10, 12]}
+            ]
+        }
+        collection = {"source": {"provider": "Outscraper"}, "reviews": [{}, {}]}
+        session = FakeSession(
+            get_responses={
+                "http://127.0.0.1:8000/api/import/options": FakeResponse(options)
+            },
+            post_responses={
+                "http://127.0.0.1:8000/api/import": FakeResponse(collection)
+            },
+        )
+
+        self.assertEqual(
+            request_import_options("http://127.0.0.1:8000/", session=session),
+            options,
+        )
+        self.assertEqual(
+            request_import(
+                "amazon",
+                "https://www.amazon.com/dp/B000000000",
+                5,
+                False,
+                "http://127.0.0.1:8000/",
+                session=session,
+            ),
+            collection,
+        )
+        self.assertEqual(
+            session.calls,
+            [
+                ("get", "http://127.0.0.1:8000/api/import/options", 5),
+                (
+                    "post",
+                    "http://127.0.0.1:8000/api/import",
+                    {
+                        "platform": "amazon",
+                        "url": "https://www.amazon.com/dp/B000000000",
+                        "limit": 5,
+                        "refresh": False,
+                    },
+                    65,
+                ),
+            ],
+        )
 
     def test_demo_uses_staged_endpoint_and_timeout(self):
         """Load deterministic demo collection data with its short work budget."""
@@ -723,6 +777,33 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertIn("Positive", option)
         self.assertIn("DEMO DATA", option)
 
+    def test_provider_source_details_show_origin_counts_time_and_cache(self):
+        """Make imported evidence provenance visible before and after analysis."""
+
+        details = source_details(
+            {
+                "url": "https://www.amazon.com/dp/B000000000",
+                "extractor": "provider_api",
+                "platform": "amazon",
+                "provider": "Outscraper",
+                "requested_count": 10,
+                "retrieved_count": 7,
+                "retrieved_at": "2026-07-22T12:00:00+00:00",
+                "cache_status": "hit",
+            },
+            review_count=7,
+        )
+
+        joined = " ".join(details)
+        for value in (
+            "https://www.amazon.com/dp/B000000000",
+            "Amazon via Outscraper",
+            "Retrieved 7 usable written reviews - Requested 10",
+            "2026-07-22 12:00:00",
+            "Cached result",
+        ):
+            self.assertIn(value, joined)
+
     def test_analysis_call_forwards_only_collection_and_base_url(self):
         """Keep the UI client contract free of a retired analysis argument."""
 
@@ -743,9 +824,16 @@ class DashboardFormattingTests(unittest.TestCase):
         """Guard the staged flow against obsolete controls and implicit demo recovery."""
 
         source = inspect.getsource(streamlit_app)
-        for retired in ("st.radio", "Gemini", "Google", "GOOGLE_API_KEY", "provider_label"):
+        for retired in ("st.radio", "Gemini", "GOOGLE_API_KEY", "provider_label"):
             self.assertNotIn(retired, source)
         self.assertIn("request_demo", source)
+        self.assertIn("request_import_options", source)
+        self.assertIn("request_import", source)
+        self.assertIn('"Review source"', source)
+        self.assertIn('"Review limit"', source)
+        self.assertIn('"Import reviews"', source)
+        self.assertIn('"Refresh from source"', source)
+        self.assertIn("may consume provider free-tier usage", source)
         self.assertIn("DEMO DATA", source)
         self.assertIn('st.expander("Supporting review evidence"', source)
         self.assertIn("Executive summary", source)
@@ -758,6 +846,30 @@ class DashboardFormattingTests(unittest.TestCase):
 
 class DashboardRuntimeTests(unittest.TestCase):
     """Verify staged dashboard behavior through Streamlit's retained runtime harness."""
+
+    def test_import_controls_load_options_without_passive_provider_work(self):
+        """Render backend-driven choices without running an import on page load."""
+
+        options = {
+            "platforms": [
+                {"key": "amazon", "label": "Amazon product", "limits": [5, 10, 12]},
+                {"key": "google_maps", "label": "Google Maps place", "limits": [5, 10, 20]},
+            ]
+        }
+        app = AppTest.from_file(streamlit_app.__file__)
+        with (
+            patch("dashboard.api_client.check_health", return_value=True),
+            patch("dashboard.api_client.request_import_options", return_value=options) as option_call,
+            patch("dashboard.api_client.request_import") as import_call,
+        ):
+            app.run(timeout=30)
+
+        self.assertEqual(list(app.exception), [])
+        self.assertIn("Review source", [element.label for element in app.selectbox])
+        self.assertIn("Review limit", [element.label for element in app.selectbox])
+        self.assertIn("Import reviews", [element.label for element in app.button])
+        option_call.assert_called_once()
+        import_call.assert_not_called()
 
     def test_pre_analysis_runtime_keeps_evidence_visible_without_an_expander(self):
         """Render collected evidence directly before any report exists."""
