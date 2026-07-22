@@ -1,0 +1,28 @@
+{
+  "id": "fixture-request",
+  "status": "Success",
+  "data": [
+    [
+      {
+        "query": "https://www.amazon.com/dp/B000000000",
+        "product_asin": "B000000000",
+        "title": "Reliable every morning",
+        "body": "The controls are simple and the results have been consistent.",
+        "rating": 5,
+        "date": "Reviewed in the United States on July 20, 2026",
+        "product_url": "https://www.amazon.com/dp/B000000000",
+        "author_title": "discard-reviewer-marker",
+        "author_url": "https://example.invalid/discard-profile"
+      },
+      {
+        "query": "https://www.amazon.com/dp/B000000000",
+        "product_asin": "B000000000",
+        "title": "Good with one concern",
+        "body": "Performance is strong, although the supplied cable feels short.",
+        "rating": 4,
+        "date": "Reviewed in the United States on July 18, 2026",
+        "product_url": "https://www.amazon.com/dp/B000000000"
+      }
+    ]
+  ]
+}
