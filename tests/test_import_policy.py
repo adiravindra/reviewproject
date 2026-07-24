@@ -16,15 +16,21 @@ class ImportPolicyTests(unittest.TestCase):
         self.assertEqual(IMPORT_LIMITS, (10, 20, 50, 100))
         self.assertIs(ApifyGoogleMapsAdapter.allowed_limits, IMPORT_LIMITS)
 
-    def test_extract_amazon_asin_supports_only_approved_product_paths(self):
-        """Return uppercase ASINs without accepting search or near-match paths."""
+    def test_extract_amazon_asin_supports_common_product_paths_and_tracking(self):
+        """Find an uppercase ASIN by path shape and ignore later URL components."""
 
         cases = {
-            "https://www.amazon.com/dp/b000000000": "B000000000",
-            "https://amazon.com/gp/product/1612680194?tag=example": "1612680194",
-            "https://amazon.com/gp/aw/d/b000000000": "B000000000",
+            "https://www.amazon.com/dp/b08c1w5n87": "B08C1W5N87",
+            "https://amazon.com/gp/product/B08C1W5N87?tag=example": "B08C1W5N87",
+            "https://amazon.com/gp/aw/d/B08C1W5N87": "B08C1W5N87",
+            "https://www.amazon.com/product-name/dp/B08C1W5N87": "B08C1W5N87",
+            "https://www.amazon.com/product-reviews/B08C1W5N87": "B08C1W5N87",
+            (
+                "https://www.amazon.com/product-name/dp/B08C1W5N87/ref=sr_1_1"
+                "?keywords=example&qid=1234567890&sr=8-1"
+            ): "B08C1W5N87",
             "https://amazon.com/s?k=kettle": None,
-            "https://amazon.com/product-reviews/B000000000": None,
+            "https://amazon.com/dp/not-an-asin": None,
         }
 
         for url, expected in cases.items():
@@ -35,14 +41,30 @@ class ImportPolicyTests(unittest.TestCase):
         """Use recognized Amazon product paths and ASIN cache identity."""
 
         for url in (
-            "https://www.amazon.com/dp/B000000000",
-            "https://amazon.com/gp/product/1612680194?tag=example",
-            "https://amazon.com/gp/aw/d/B000000000",
+            "https://www.amazon.com/dp/B08C1W5N87",
+            "https://amazon.com/gp/product/B08C1W5N87?tag=example",
+            "https://amazon.com/gp/aw/d/B08C1W5N87",
+            "https://www.amazon.com/product-name/dp/B08C1W5N87",
+            "https://www.amazon.com/product-reviews/B08C1W5N87",
         ):
             with self.subTest(url=url):
                 source = validate_import_source("amazon", url)
-                self.assertIn(source.source_key, ("B000000000", "1612680194"))
+                self.assertEqual(source.source_key, "B08C1W5N87")
                 self.assertEqual(source.original_url, url)
+
+    def test_amazon_rejects_shortened_and_unsupported_urls(self):
+        """Require an inspectable Amazon host and recognized product path."""
+
+        for url in (
+            "https://amzn.to/3example",
+            "https://a.co/d/example",
+            "https://www.amazon.com/s?k=kettle",
+            "https://www.amazon.com/gp/help/customer/display.html",
+        ):
+            with self.subTest(url=url):
+                with self.assertRaises(ReviewImportError) as raised:
+                    validate_import_source("amazon", url)
+                self.assertEqual(raised.exception.code, "invalid_import_url")
 
     def test_google_accepts_one_place_url_or_share_url(self):
         """Accept direct place, CID, and non-root Google Maps share URLs."""
@@ -65,7 +87,6 @@ class ImportPolicyTests(unittest.TestCase):
             ("amazon", "http://www.amazon.com/dp/B000000000"),
             ("amazon", "https://user:pass@amazon.com/dp/B000000000"),
             ("amazon", "https://amazon.com/s?k=kettle"),
-            ("amazon", "https://amazon.com/product-reviews/B000000000"),
             ("amazon", "https://www.google.com/maps/place/Test"),
             ("google_maps", "https://www.google.com/search?q=cafe"),
             ("google_maps", "https://www.google.com/maps/search/cafe"),

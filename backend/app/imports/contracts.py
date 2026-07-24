@@ -33,6 +33,8 @@ def classify_provider_status(status_code: int) -> None:
         raise ReviewImportError("import_timeout")
     if status_code >= 500:
         raise ReviewImportError("provider_unavailable")
+    if 400 <= status_code < 500:
+        raise ReviewImportError("provider_request_rejected")
     raise ReviewImportError("import_failed")
 
 

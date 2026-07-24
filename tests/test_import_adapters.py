@@ -1,6 +1,7 @@
 """Contract-test provider adapters with saved fixtures and fake HTTP only."""
 
 import json
+import logging
 import os
 import unittest
 from pathlib import Path
@@ -78,6 +79,10 @@ class ImportAdapterTests(unittest.TestCase):
 
         for limit, max_pages in ((10, 1), (20, 2), (50, 5), (100, 10)):
             with self.subTest(limit=limit):
+                source_url = (
+                    "https://www.amazon.com/product-name/dp/B08C1W5N87/ref=sr_1_1"
+                    "?keywords=example&qid=1234567890&sr=8-1"
+                )
                 session = FakeSession(
                     FakeResponse(payload=load_fixture("apify_axesso_amazon_reviews.json"))
                 )
@@ -85,7 +90,7 @@ class ImportAdapterTests(unittest.TestCase):
                     os.environ, {"APIFY_API_TOKEN": "  test-apify-token  "}, clear=False
                 ):
                     result = ApifyAmazonReviewsAdapter(session=session).fetch(
-                        "https://www.amazon.com/dp/B000000000", limit
+                        source_url, limit
                     )
 
                 self.assertEqual(len(session.calls), 1)
@@ -101,10 +106,15 @@ class ImportAdapterTests(unittest.TestCase):
                     {
                         "input": [
                             {
-                                "asin": "B000000000",
+                                "asin": "B08C1W5N87",
                                 "domainCode": "com",
-                                "sortBy": "helpful",
+                                "sortBy": "recent",
                                 "maxPages": max_pages,
+                                "filterByStar": "five_star",
+                                "filterByKeyword": "good",
+                                "reviewerType": "all_reviews",
+                                "formatType": "current_format",
+                                "mediaType": "all_contents",
                             }
                         ]
                     },
@@ -211,13 +221,27 @@ class ImportAdapterTests(unittest.TestCase):
         """Reduce Axesso failures to application-owned codes."""
 
         cases = (
+            (FakeResponse(400, []), "provider_request_rejected"),
             (FakeResponse(401, []), "provider_auth_failed"),
             (FakeResponse(402, []), "provider_quota_exhausted"),
+            (FakeResponse(404, []), "provider_request_rejected"),
+            (FakeResponse(409, []), "provider_request_rejected"),
+            (FakeResponse(422, []), "provider_request_rejected"),
             (FakeResponse(429, []), "provider_unavailable"),
             (FakeResponse(503, []), "provider_unavailable"),
             (requests.Timeout("secret timeout"), "import_timeout"),
             (requests.ConnectionError("secret socket"), "provider_unavailable"),
-            (FakeResponse(200, json_error=ValueError("secret body")), "provider_response_invalid"),
+            (
+                FakeResponse(
+                    200,
+                    json_error=requests.exceptions.JSONDecodeError(
+                        "secret malformed JSON",
+                        "secret provider body",
+                        0,
+                    ),
+                ),
+                "provider_response_invalid",
+            ),
             (FakeResponse(200, {}), "provider_response_invalid"),
             (FakeResponse(200, [1]), "provider_response_invalid"),
         )
@@ -226,10 +250,37 @@ class ImportAdapterTests(unittest.TestCase):
                 session = FakeSession(response)
                 adapter = ApifyAmazonReviewsAdapter(session=session)
                 with patch.dict(os.environ, {"APIFY_API_TOKEN": "secret-token"}, clear=False):
-                    with self.assertRaises(ReviewImportError) as raised:
+                    with (
+                        self.assertLogs(
+                            "backend.app.imports.apify_amazon", level=logging.WARNING
+                        ) as captured,
+                        self.assertRaises(ReviewImportError) as raised,
+                    ):
                         adapter.fetch("https://www.amazon.com/dp/B000000000", 10)
                 self.assertEqual(raised.exception.code, expected)
                 self.assertNotIn("secret", str(raised.exception))
+                self.assertIn(expected, "\n".join(captured.output))
+
+    def test_axesso_logs_safe_failure_category_without_provider_details(self):
+        """Log actionable status and code without response bodies or credentials."""
+
+        session = FakeSession(FakeResponse(401, {"error": "secret provider body"}))
+        adapter = ApifyAmazonReviewsAdapter(session=session)
+        with (
+            patch.dict(os.environ, {"APIFY_API_TOKEN": "secret-token"}, clear=False),
+            self.assertLogs(
+                "backend.app.imports.apify_amazon", level=logging.WARNING
+            ) as captured,
+            self.assertRaises(ReviewImportError) as raised,
+        ):
+            adapter.fetch("https://www.amazon.com/dp/B000000000", 10)
+
+        logged = "\n".join(captured.output)
+        self.assertEqual(raised.exception.code, "provider_auth_failed")
+        self.assertIn("provider_auth_failed", logged)
+        self.assertIn("status=401", logged)
+        self.assertNotIn("secret-token", logged)
+        self.assertNotIn("secret provider body", logged)
 
 
 if __name__ == "__main__":

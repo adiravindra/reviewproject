@@ -240,6 +240,7 @@ class PublicError(BaseModel):
         "missing_provider_key",
         "provider_auth_failed",
         "provider_quota_exhausted",
+        "provider_request_rejected",
         "provider_response_invalid",
         "import_failed",
         "provider_unavailable",

@@ -59,7 +59,8 @@ COLLECTION_ERRORS = {
 IMPORT_ERRORS = {
     "invalid_import_url": (
         422,
-        "Use an HTTPS Amazon product or Google Maps place URL matching the selected source.",
+        "Use a full, unshortened HTTPS Amazon product/reviews URL or Google Maps "
+        "place URL matching the selected source.",
     ),
     "unsupported_import_platform": (422, "Select Amazon or Google Maps."),
     "unsupported_import_limit": (422, "Choose one of the limits shown for the selected source."),
@@ -74,6 +75,11 @@ IMPORT_ERRORS = {
     "provider_quota_exhausted": (
         429,
         "The review provider quota or configured spending capacity is exhausted.",
+    ),
+    "provider_request_rejected": (
+        502,
+        "The review provider rejected the import request. Check the source URL "
+        "or provider configuration and try again.",
     ),
     "no_reviews": (422, "At least two usable written reviews are required."),
     "provider_response_invalid": (

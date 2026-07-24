@@ -1,5 +1,6 @@
 """Retrieve bounded Amazon review sets through Axesso's public Apify Actor."""
 
+import logging
 import math
 import os
 from typing import Any
@@ -22,6 +23,7 @@ AXESSO_ENDPOINT = (
     "axesso_data~amazon-reviews-scraper/run-sync-get-dataset-items"
 )
 AXESSO_TIMEOUT = (5, 120)
+LOGGER = logging.getLogger(__name__)
 
 
 class ApifyAmazonReviewsAdapter:
@@ -47,6 +49,7 @@ class ApifyAmazonReviewsAdapter:
         if asin is None:
             raise ReviewImportError("invalid_import_url")
         max_pages = min(10, max(1, math.ceil(limit / 10)))
+        response_status = None
         try:
             response = self.session.post(
                 AXESSO_ENDPOINT,
@@ -60,23 +63,33 @@ class ApifyAmazonReviewsAdapter:
                         {
                             "asin": asin,
                             "domainCode": "com",
-                            "sortBy": "helpful",
+                            "sortBy": "recent",
                             "maxPages": max_pages,
+                            "filterByStar": "five_star",
+                            "filterByKeyword": "good",
+                            "reviewerType": "all_reviews",
+                            "formatType": "current_format",
+                            "mediaType": "all_contents",
                         }
                     ]
                 },
                 timeout=AXESSO_TIMEOUT,
             )
+            response_status = response.status_code
             classify_provider_status(response.status_code)
             items = _extract_items(response.json())
-        except ReviewImportError:
+        except ReviewImportError as error:
+            _log_provider_failure(error.code, response_status)
             raise
         except requests.Timeout:
+            _log_provider_failure("import_timeout", response_status)
             raise ReviewImportError("import_timeout") from None
-        except requests.RequestException:
-            raise ReviewImportError("provider_unavailable") from None
-        except (TypeError, ValueError, KeyError):
+        except (requests.exceptions.JSONDecodeError, TypeError, ValueError, KeyError):
+            _log_provider_failure("provider_response_invalid", response_status)
             raise ReviewImportError("provider_response_invalid") from None
+        except requests.RequestException:
+            _log_provider_failure("provider_unavailable", response_status)
+            raise ReviewImportError("provider_unavailable") from None
 
         successful = [
             item
@@ -110,3 +123,14 @@ def _extract_items(payload: Any) -> list[dict[str, Any]]:
     ):
         raise ReviewImportError("provider_response_invalid")
     return payload
+
+
+def _log_provider_failure(code: str, status_code: int | None) -> None:
+    """Record only safe diagnostics, never credentials or provider bodies."""
+
+    LOGGER.warning(
+        "Amazon review import failed provider=%s code=%s status=%s",
+        ApifyAmazonReviewsAdapter.provider_key,
+        code,
+        status_code if status_code is not None else "unavailable",
+    )

@@ -156,6 +156,7 @@ class ImportApiTests(unittest.TestCase):
             "missing_provider_key": 400,
             "provider_auth_failed": 401,
             "provider_quota_exhausted": 429,
+            "provider_request_rejected": 502,
             "no_reviews": 422,
             "provider_response_invalid": 502,
             "import_failed": 502,
@@ -179,6 +180,56 @@ class ImportApiTests(unittest.TestCase):
                 self.assertEqual(response.status_code, status)
                 self.assertEqual(response.json()["detail"]["code"], code)
                 self.assertNotIn(marker, response.text)
+
+    def test_provider_request_rejection_has_an_actionable_safe_message(self):
+        """Distinguish an upstream request rejection from a generic failure."""
+
+        service = Mock()
+        service.import_reviews.side_effect = ReviewImportError(
+            "provider_request_rejected",
+            "secret raw provider body",
+        )
+        response = TestClient(
+            create_app(import_service=service, history_store=FakeHistoryStore())
+        ).post(
+            "/api/import",
+            json={
+                "platform": "amazon",
+                "url": "https://www.amazon.com/dp/B08C1W5N87",
+                "limit": 20,
+            },
+        )
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(
+            response.json()["detail"]["code"],
+            "provider_request_rejected",
+        )
+        self.assertIn(
+            "rejected the import request",
+            response.json()["detail"]["message"],
+        )
+        self.assertNotIn("secret raw provider body", response.text)
+
+    def test_invalid_import_url_message_explains_amazon_short_links(self):
+        """Tell users to provide a full Amazon URL without exposing internals."""
+
+        service = Mock()
+        service.import_reviews.side_effect = ReviewImportError("invalid_import_url")
+        response = TestClient(
+            create_app(import_service=service, history_store=FakeHistoryStore())
+        ).post(
+            "/api/import",
+            json={
+                "platform": "amazon",
+                "url": "https://amzn.to/3example",
+                "limit": 20,
+            },
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["detail"]["code"], "invalid_import_url")
+        self.assertIn("full, unshortened", response.json()["detail"]["message"])
 
     def test_unknown_import_failures_use_generic_import_envelope(self):
         """Hide unknown exception text behind the approved import failure."""

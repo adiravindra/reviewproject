@@ -9,7 +9,7 @@ from backend.app.imports.contracts import ReviewImportError
 
 
 _ASIN_PATH = re.compile(
-    r"/(?:dp|gp/product|gp/aw/d)/([A-Z0-9]{10})(?:[/?]|$)",
+    r"/(?:dp|gp/product|gp/aw/d|product-reviews)/([A-Z0-9]{10})(?:/|$)",
     re.IGNORECASE,
 )
 _GOOGLE_HOSTS = {"google.com", "www.google.com", "maps.google.com"}
