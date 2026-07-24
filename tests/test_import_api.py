@@ -45,8 +45,8 @@ def imported_collection():
             extractor="provider_api",
             is_demo=False,
             platform="amazon",
-            provider="Outscraper",
-            requested_count=5,
+            provider="Apify (Axesso)",
+            requested_count=20,
             retrieved_count=2,
             retrieved_at="2026-07-22T12:00:00+00:00",
             cache_status="miss",
@@ -67,7 +67,16 @@ class ImportApiTests(unittest.TestCase):
         service = Mock()
         service.options.return_value = ImportOptions(
             platforms=[
-                ImportPlatformOption(key="amazon", label="Amazon product", limits=[5, 10, 12])
+                ImportPlatformOption(
+                    key="amazon",
+                    label="Amazon product",
+                    limits=[10, 20, 50, 100],
+                ),
+                ImportPlatformOption(
+                    key="google_maps",
+                    label="Google Maps place",
+                    limits=[10, 20, 50, 100],
+                ),
             ]
         )
         service.import_reviews.return_value = imported_collection()
@@ -79,17 +88,21 @@ class ImportApiTests(unittest.TestCase):
             json={
                 "platform": "amazon",
                 "url": "https://www.amazon.com/dp/B000000000",
-                "limit": 5,
+                "limit": 100,
                 "refresh": False,
             },
         )
 
         self.assertEqual(options.status_code, 200)
-        self.assertEqual(options.json()["platforms"][0]["limits"], [5, 10, 12])
+        self.assertEqual(
+            [item["limits"] for item in options.json()["platforms"]],
+            [[10, 20, 50, 100], [10, 20, 50, 100]],
+        )
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["source"]["provider"], "Apify (Axesso)")
         submitted = service.import_reviews.call_args.args[0]
         self.assertEqual(submitted.platform, "amazon")
-        self.assertEqual(submitted.limit, 5)
+        self.assertEqual(submitted.limit, 100)
         self.assertFalse(submitted.refresh)
         service.options.assert_called_once_with()
         service.import_reviews.assert_called_once()
@@ -111,9 +124,17 @@ class ImportApiTests(unittest.TestCase):
         """Classify platform, limit, and URL request validation safely."""
 
         cases = (
-            ({"platform": "other", "url": "https://example.com", "limit": 5}, "unsupported_import_platform"),
+            ({"platform": "other", "url": "https://example.com", "limit": 20}, "unsupported_import_platform"),
             ({"platform": "amazon", "url": "https://example.com", "limit": 0}, "unsupported_import_limit"),
-            ({"platform": "amazon", "url": "not-a-url", "limit": 5}, "invalid_import_url"),
+            (
+                {
+                    "platform": "amazon",
+                    "url": "https://www.amazon.com/dp/B000000000",
+                    "limit": 101,
+                },
+                "unsupported_import_limit",
+            ),
+            ({"platform": "amazon", "url": "not-a-url", "limit": 20}, "invalid_import_url"),
         )
         for payload, expected in cases:
             with self.subTest(expected=expected):
@@ -146,7 +167,7 @@ class ImportApiTests(unittest.TestCase):
         payload = {
             "platform": "amazon",
             "url": "https://www.amazon.com/dp/B000000000",
-            "limit": 5,
+            "limit": 20,
         }
         for code, status in cases.items():
             with self.subTest(code=code):
@@ -172,7 +193,7 @@ class ImportApiTests(unittest.TestCase):
             json={
                 "platform": "amazon",
                 "url": "https://www.amazon.com/dp/B000000000",
-                "limit": 5,
+                "limit": 20,
             },
         )
         self.assertEqual(response.status_code, 502)

@@ -48,6 +48,14 @@ class FakeAdapter:
         return self.result
 
 
+class FakeGoogleAdapter(FakeAdapter):
+    """Expose Google Maps options without performing provider work."""
+
+    provider_key = "fake_google_maps"
+    provider_label = "Fixture Provider"
+    platform = "google_maps"
+
+
 class FakeCache:
     """Hold one cache value in memory while recording operations."""
 
@@ -97,7 +105,15 @@ class ImportServiceTests(unittest.TestCase):
     def test_options_come_from_registry_without_provider_internals(self):
         """Expose label and limits without touching the provider."""
 
-        options = self.service.options()
+        google_adapter = FakeGoogleAdapter()
+        service = ReviewImportService(
+            {"amazon": self.adapter, "google_maps": google_adapter},
+            self.cache,
+            clock=lambda: NOW,
+        )
+
+        options = service.options()
+
         self.assertEqual(
             options.model_dump(),
             {
@@ -106,11 +122,17 @@ class ImportServiceTests(unittest.TestCase):
                         "key": "amazon",
                         "label": "Amazon product",
                         "limits": [10, 20, 50, 100],
-                    }
+                    },
+                    {
+                        "key": "google_maps",
+                        "label": "Google Maps place",
+                        "limits": [10, 20, 50, 100],
+                    },
                 ]
             },
         )
         self.assertEqual(self.adapter.calls, [])
+        self.assertEqual(google_adapter.calls, [])
 
     def test_miss_fetches_once_normalizes_and_saves_provenance(self):
         """Fetch once on a miss and return complete source provenance."""
