@@ -95,6 +95,30 @@ class ImportCacheTests(unittest.TestCase):
             with self.subTest(variant=variant):
                 self.assertIsNone(self.store.get(variant, NOW))
 
+    def test_automation_lab_identity_does_not_reuse_historical_axesso_entry(self):
+        """Start the replacement Actor with a fresh cache namespace."""
+
+        axesso = CacheIdentity(
+            "amazon",
+            "apify_axesso_amazon",
+            "1",
+            "B000000000",
+            20,
+            "most_relevant",
+        )
+        automation_lab = CacheIdentity(
+            "amazon",
+            "apify_automation_lab_amazon",
+            "1",
+            "B000000000",
+            20,
+            "most_relevant",
+        )
+        self.store.put(axesso, collection(), NOW, NOW + timedelta(days=30))
+
+        self.assertIsNotNone(self.store.get(axesso, NOW))
+        self.assertIsNone(self.store.get(automation_lab, NOW))
+
     def test_corrupt_entry_is_removed_and_cache_contains_no_identity_or_secret_marker(self):
         """Discard invalid JSON and persist only normalized collection data."""
 

@@ -203,6 +203,29 @@ class HistoryStoreTests(unittest.TestCase):
         self.assertEqual((item.platform, item.provider), ("amazon", "Outscraper"))
         self.assertEqual((restored.source.platform, restored.source.provider), ("amazon", "Outscraper"))
 
+    def test_historical_axesso_reports_round_trip_with_stable_provenance(self):
+        """Keep old Axesso labels readable after the active Actor changes."""
+
+        run_id = self.store.save(
+            make_report(
+                title="Amazon product B000000000",
+                platform="amazon",
+                provider="Apify (Axesso)",
+            )
+        )
+
+        item = self.store.list_runs()[0]
+        restored = self.store.get(run_id)
+
+        self.assertEqual(
+            (item.platform, item.provider),
+            ("amazon", "Apify (Axesso)"),
+        )
+        self.assertEqual(
+            (restored.source.platform, restored.source.provider),
+            ("amazon", "Apify (Axesso)"),
+        )
+
     def test_list_runs_honors_a_bounded_limit(self):
         """Return only the requested number of newest history summary rows."""
 
