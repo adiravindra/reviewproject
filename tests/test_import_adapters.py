@@ -11,8 +11,8 @@ import requests
 
 from backend.app.imports.apify import ApifyGoogleMapsAdapter
 from backend.app.imports.apify_amazon import (
-    AXESSO_ENDPOINT,
-    AXESSO_TIMEOUT,
+    AUTOMATION_LAB_ENDPOINT,
+    AUTOMATION_LAB_TIMEOUT,
     ApifyAmazonReviewsAdapter,
 )
 from backend.app.imports.contracts import ReviewImportError
@@ -74,75 +74,69 @@ def load_fixture(name):
 class ImportAdapterTests(unittest.TestCase):
     """Verify exact provider calls, decoding, and safe failures."""
 
-    def test_axesso_uses_one_bounded_request_for_each_allowed_limit(self):
-        """Map each shared limit to one exact Axesso Actor request."""
+    def test_automation_lab_uses_exact_unfiltered_request_for_each_allowed_limit(self):
+        """Send one ASIN with the exact approved natural-sample input."""
 
-        for limit, max_pages in ((10, 1), (20, 2), (50, 5), (100, 10)):
+        for limit in (10, 20, 50, 100):
             with self.subTest(limit=limit):
-                source_url = (
-                    "https://www.amazon.com/product-name/dp/B08C1W5N87/ref=sr_1_1"
-                    "?keywords=example&qid=1234567890&sr=8-1"
-                )
                 session = FakeSession(
-                    FakeResponse(payload=load_fixture("apify_axesso_amazon_reviews.json"))
+                    FakeResponse(
+                        payload=load_fixture(
+                            "apify_automation_lab_amazon_reviews.json"
+                        )
+                    )
                 )
                 with patch.dict(
-                    os.environ, {"APIFY_API_TOKEN": "  test-apify-token  "}, clear=False
+                    os.environ,
+                    {"APIFY_API_TOKEN": "  test-apify-token  "},
+                    clear=False,
                 ):
                     result = ApifyAmazonReviewsAdapter(session=session).fetch(
-                        source_url, limit
+                        "https://www.amazon.com/dp/B0GR6F79MT"
+                        "?ref=share&social_share=example&th=1",
+                        limit,
                     )
 
                 self.assertEqual(len(session.calls), 1)
                 method, url, kwargs = session.calls[0]
-                self.assertEqual((method, url), ("post", AXESSO_ENDPOINT))
+                self.assertEqual((method, url), ("post", AUTOMATION_LAB_ENDPOINT))
+                self.assertEqual(kwargs["headers"]["Authorization"], "Bearer test-apify-token")
                 self.assertNotIn("token=", url)
-                self.assertEqual(
-                    kwargs["headers"]["Authorization"], "Bearer test-apify-token"
-                )
-                self.assertEqual(kwargs["timeout"], AXESSO_TIMEOUT)
+                self.assertEqual(kwargs["timeout"], AUTOMATION_LAB_TIMEOUT)
                 self.assertEqual(
                     kwargs["json"],
                     {
-                        "input": [
-                            {
-                                "asin": "B08C1W5N87",
-                                "domainCode": "com",
-                                "sortBy": "recent",
-                                "maxPages": max_pages,
-                                "filterByStar": "five_star",
-                                "filterByKeyword": "good",
-                                "reviewerType": "all_reviews",
-                                "formatType": "current_format",
-                                "mediaType": "all_contents",
-                            }
-                        ]
+                        "asins": ["B0GR6F79MT"],
+                        "marketplace": "US",
+                        "maxReviewsPerProduct": limit,
+                        "sort": "helpful",
                     },
                 )
-                self.assertEqual(result.title, "Fixture product")
-                self.assertEqual(result.source_key, "B000000000")
-                self.assertEqual(len(result.reviews), 2)
-                self.assertEqual(result.reviews[0].title, "Reliable every morning")
+                self.assertEqual(result.title, "Amazon product B0GR6F79MT")
+                self.assertEqual(result.source_key, "B0GR6F79MT")
                 self.assertEqual(
-                    result.reviews[0].body,
-                    "The controls are simple and the results are consistent.",
+                    [review.rating for review in result.reviews],
+                    [5, 3, 1],
                 )
-                self.assertEqual(result.reviews[0].rating, "5.0 out of 5 stars")
                 self.assertEqual(
-                    result.reviews[0].date,
-                    "Reviewed in the United States on July 20, 2026",
+                    [review.title for review in result.reviews],
+                    [
+                        "Most useful positive review",
+                        "Useful but mixed",
+                        "Important reliability concern",
+                    ],
                 )
                 for marker in (
                     "discard-reviewer-marker",
-                    "discard-profile-marker",
-                    "discard-image-marker",
-                    "discard-variation-marker",
-                    "discard-helpful-marker",
-                    "discard-unsuccessful",
+                    "discard-profile",
+                    "discard-review-id",
+                    "discard-review-url",
+                    "discard-neutral-reviewer",
+                    "discard-negative-reviewer",
                 ):
                     self.assertNotIn(marker, repr(result))
 
-    def test_axesso_valid_empty_result_returns_no_candidates(self):
+    def test_automation_lab_valid_empty_result_returns_no_candidates(self):
         """Let the import service own the safe no-review failure mapping."""
 
         session = FakeSession(FakeResponse(payload=[]))
@@ -204,7 +198,7 @@ class ImportAdapterTests(unittest.TestCase):
                 self.assertEqual(raised.exception.code, "missing_provider_key")
                 self.assertEqual(adapter.session.calls, [])
 
-    def test_axesso_rejects_invalid_amazon_source_before_http(self):
+    def test_automation_lab_rejects_invalid_amazon_source_before_http(self):
         """Keep direct adapter use from sending a malformed Actor input."""
 
         session = FakeSession(FakeResponse(payload=[]))
@@ -217,8 +211,8 @@ class ImportAdapterTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "invalid_import_url")
         self.assertEqual(session.calls, [])
 
-    def test_axesso_statuses_transport_and_schema_failures_are_safely_mapped(self):
-        """Reduce Axesso failures to application-owned codes."""
+    def test_automation_lab_statuses_transport_and_schema_failures_are_safely_mapped(self):
+        """Reduce Automation Lab failures to application-owned codes."""
 
         cases = (
             (FakeResponse(400, []), "provider_request_rejected"),
@@ -261,7 +255,7 @@ class ImportAdapterTests(unittest.TestCase):
                 self.assertNotIn("secret", str(raised.exception))
                 self.assertIn(expected, "\n".join(captured.output))
 
-    def test_axesso_logs_safe_failure_category_without_provider_details(self):
+    def test_automation_lab_logs_safe_failure_category_without_provider_details(self):
         """Log actionable status and code without response bodies or credentials."""
 
         session = FakeSession(FakeResponse(401, {"error": "secret provider body"}))

@@ -1,7 +1,6 @@
-"""Retrieve bounded Amazon review sets through Axesso's public Apify Actor."""
+"""Retrieve bounded Amazon review sets through Automation Lab's Apify Actor."""
 
 import logging
-import math
 import os
 from typing import Any
 
@@ -17,20 +16,20 @@ from backend.app.imports.contracts import (
 from backend.app.imports.policies import extract_amazon_asin
 
 
-AXESSO_ACTOR_ID = "axesso_data~amazon-reviews-scraper"
-AXESSO_ENDPOINT = (
+AUTOMATION_LAB_ACTOR_ID = "automation-lab~amazon-reviews-scraper"
+AUTOMATION_LAB_ENDPOINT = (
     "https://api.apify.com/v2/acts/"
-    "axesso_data~amazon-reviews-scraper/run-sync-get-dataset-items"
+    "automation-lab~amazon-reviews-scraper/run-sync-get-dataset-items"
 )
-AXESSO_TIMEOUT = (5, 120)
+AUTOMATION_LAB_TIMEOUT = (5, 120)
 LOGGER = logging.getLogger(__name__)
 
 
 class ApifyAmazonReviewsAdapter:
-    """Implement Amazon imports through one replaceable Axesso Actor call."""
+    """Implement Amazon imports through one replaceable Automation Lab call."""
 
-    provider_key = "apify_axesso_amazon"
-    provider_label = "Apify (Axesso)"
+    provider_key = "apify_automation_lab_amazon"
+    provider_label = "Apify (Automation Lab)"
     platform = "amazon"
     allowed_limits = IMPORT_LIMITS
 
@@ -48,32 +47,22 @@ class ApifyAmazonReviewsAdapter:
         asin = extract_amazon_asin(source_url)
         if asin is None:
             raise ReviewImportError("invalid_import_url")
-        max_pages = min(10, max(1, math.ceil(limit / 10)))
         response_status = None
         try:
             response = self.session.post(
-                AXESSO_ENDPOINT,
+                AUTOMATION_LAB_ENDPOINT,
                 headers={
                     "Authorization": f"Bearer {token}",
                     "Accept": "application/json",
                     "Content-Type": "application/json",
                 },
                 json={
-                    "input": [
-                        {
-                            "asin": asin,
-                            "domainCode": "com",
-                            "sortBy": "recent",
-                            "maxPages": max_pages,
-                            "filterByStar": "five_star",
-                            "filterByKeyword": "good",
-                            "reviewerType": "all_reviews",
-                            "formatType": "current_format",
-                            "mediaType": "all_contents",
-                        }
-                    ]
+                    "asins": [asin],
+                    "marketplace": "US",
+                    "maxReviewsPerProduct": limit,
+                    "sort": "helpful",
                 },
-                timeout=AXESSO_TIMEOUT,
+                timeout=AUTOMATION_LAB_TIMEOUT,
             )
             response_status = response.status_code
             classify_provider_status(response.status_code)
@@ -91,32 +80,23 @@ class ApifyAmazonReviewsAdapter:
             _log_provider_failure("provider_unavailable", response_status)
             raise ReviewImportError("provider_unavailable") from None
 
-        successful = [
-            item
-            for item in items
-            if item.get("statusCode") == 200
-            and str(item.get("statusMessage") or "").upper() == "FOUND"
-        ]
-        first = successful[0] if successful else {}
+        first = items[0] if items else {}
         source_key = str(first.get("asin") or "").strip().upper() or asin
-        title = (
-            str(first.get("productTitle") or "").strip()
-            or f"Amazon product {source_key}"
-        )
+        title = f"Amazon product {source_key}"
         reviews = tuple(
             ProviderReviewCandidate(
                 title=item.get("title"),
-                body=item.get("text"),
+                body=item.get("body"),
                 rating=item.get("rating"),
                 date=item.get("date"),
             )
-            for item in successful
+            for item in items
         )
         return ProviderImportResult(title, source_url, source_key, reviews)
 
 
 def _extract_items(payload: Any) -> list[dict[str, Any]]:
-    """Validate the synchronous Axesso dataset-items response."""
+    """Validate the synchronous Automation Lab dataset-items response."""
 
     if not isinstance(payload, list) or not all(
         isinstance(item, dict) for item in payload

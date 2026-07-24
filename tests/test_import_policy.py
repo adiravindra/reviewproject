@@ -3,8 +3,10 @@
 import unittest
 
 from backend.app.imports.apify import ApifyGoogleMapsAdapter
+from backend.app.imports.apify_amazon import ApifyAmazonReviewsAdapter
 from backend.app.imports.contracts import IMPORT_LIMITS, ReviewImportError
 from backend.app.imports.policies import extract_amazon_asin, validate_import_source
+from backend.app.imports.registry import build_default_registry
 
 
 class ImportPolicyTests(unittest.TestCase):
@@ -15,6 +17,16 @@ class ImportPolicyTests(unittest.TestCase):
 
         self.assertEqual(IMPORT_LIMITS, (10, 20, 50, 100))
         self.assertIs(ApifyGoogleMapsAdapter.allowed_limits, IMPORT_LIMITS)
+
+    def test_default_amazon_adapter_uses_automation_lab_identity(self):
+        """Expose a new cache/provenance identity for the replacement Actor."""
+
+        adapter = build_default_registry()["amazon"]
+
+        self.assertIsInstance(adapter, ApifyAmazonReviewsAdapter)
+        self.assertEqual(adapter.provider_key, "apify_automation_lab_amazon")
+        self.assertEqual(adapter.provider_label, "Apify (Automation Lab)")
+        self.assertIs(adapter.allowed_limits, IMPORT_LIMITS)
 
     def test_extract_amazon_asin_supports_common_product_paths_and_tracking(self):
         """Find an uppercase ASIN by path shape and ignore later URL components."""

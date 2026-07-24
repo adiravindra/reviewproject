@@ -13,7 +13,7 @@ _AMAZON_DATE = re.compile(
     r"\bon\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),\s+(\d{4})\b",
     re.IGNORECASE,
 )
-_AXESSO_RATING = re.compile(r"([1-5])\.0 out of 5 stars", re.IGNORECASE)
+_WHOLE_STAR_RATING = re.compile(r"([1-5])\.0 out of 5 stars", re.IGNORECASE)
 
 
 def _clean(value: Any) -> str:
@@ -34,7 +34,7 @@ def _rating(value: Any) -> int | None:
     text = _clean(value)
     if len(text) == 1 and text in "12345":
         return int(text)
-    match = _AXESSO_RATING.fullmatch(text)
+    match = _WHOLE_STAR_RATING.fullmatch(text)
     if match is not None:
         return int(match.group(1))
     return None

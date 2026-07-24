@@ -1,0 +1,32 @@
+[
+  {
+    "asin": "B0GR6F79MT",
+    "title": "Most useful positive review",
+    "body": "The laptop is fast, quiet, and lasts through a full workday.",
+    "rating": 5,
+    "date": "Reviewed in the United States on July 20, 2026",
+    "author": "discard-reviewer-marker",
+    "authorUrl": "https://example.invalid/discard-profile",
+    "reviewId": "discard-review-id",
+    "helpfulVotes": 42,
+    "reviewUrl": "https://example.invalid/discard-review-url",
+    "isVerifiedPurchase": true,
+    "scrapedAt": "2026-07-20T12:00:00.000Z"
+  },
+  {
+    "asin": "B0GR6F79MT",
+    "title": "Useful but mixed",
+    "body": "Performance is steady, although the port selection is only adequate.",
+    "rating": 3,
+    "date": "Reviewed in the United States on July 18, 2026",
+    "author": "discard-neutral-reviewer"
+  },
+  {
+    "asin": "B0GR6F79MT",
+    "title": "Important reliability concern",
+    "body": "The display began flickering after several days of ordinary use.",
+    "rating": 1,
+    "date": "Reviewed in the United States on July 16, 2026",
+    "author": "discard-negative-reviewer"
+  }
+]
