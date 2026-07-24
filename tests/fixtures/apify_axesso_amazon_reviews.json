@@ -1,0 +1,44 @@
+[
+  {
+    "statusCode": 200,
+    "statusMessage": "FOUND",
+    "asin": "B000000000",
+    "productTitle": "Fixture product",
+    "title": "Reliable every morning",
+    "text": "The controls are simple and the results are consistent.",
+    "rating": "5.0 out of 5 stars",
+    "date": "Reviewed in the United States on July 20, 2026",
+    "userName": "discard-reviewer-marker",
+    "profilePath": "discard-profile-marker",
+    "imageUrlList": [
+      "discard-image-marker"
+    ],
+    "variation": "discard-variation-marker",
+    "helpfulVoteStatement": "discard-helpful-marker"
+  },
+  {
+    "statusCode": 200,
+    "statusMessage": "FOUND",
+    "asin": "B000000000",
+    "productTitle": "Fixture product",
+    "title": "Good with one concern",
+    "text": "Performance is strong, although the supplied cable feels short.",
+    "rating": "4.0 out of 5 stars",
+    "date": "Reviewed in the United States on July 18, 2026",
+    "userName": "discard-second-reviewer",
+    "profilePath": "discard-second-profile",
+    "imageUrlList": [],
+    "variation": "discard-second-variation",
+    "helpfulVoteStatement": "discard-second-helpful"
+  },
+  {
+    "statusCode": 404,
+    "statusMessage": "NOT_FOUND",
+    "asin": "B000000000",
+    "productTitle": "Fixture product",
+    "title": "discard-unsuccessful-title",
+    "text": "discard-unsuccessful-body",
+    "rating": "1.0 out of 5 stars",
+    "date": "discard-unsuccessful-date"
+  }
+]

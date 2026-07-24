@@ -73,6 +73,41 @@ class ImportNormalizerTests(unittest.TestCase):
         self.assertIsNone(normalized.reviews[0].rating)
         self.assertIsNone(normalized.reviews[1].rating)
 
+    def test_accepts_only_axesso_integer_star_rating_text(self):
+        """Parse Axesso whole-star text without rounding or digit extraction."""
+
+        result = ProviderImportResult(
+            title="Product",
+            source_url="https://www.amazon.com/dp/B000000000",
+            source_key="B000000000",
+            reviews=(
+                ProviderReviewCandidate(
+                    None,
+                    "This review has an exact whole-star Axesso rating.",
+                    "5.0 out of 5 stars",
+                    None,
+                ),
+                ProviderReviewCandidate(
+                    None,
+                    "This review has a fractional Axesso rating.",
+                    "4.5 out of 5 stars",
+                    None,
+                ),
+                ProviderReviewCandidate(
+                    None,
+                    "This review embeds a rating in unrelated text.",
+                    "Rating is 5.0 out of 5 stars",
+                    None,
+                ),
+            ),
+        )
+
+        normalized = normalize_provider_result(result, limit=10)
+
+        self.assertEqual(normalized.reviews[0].rating, 5)
+        self.assertIsNone(normalized.reviews[1].rating)
+        self.assertIsNone(normalized.reviews[2].rating)
+
 
 if __name__ == "__main__":
     unittest.main()

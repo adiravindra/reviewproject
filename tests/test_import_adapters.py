@@ -9,8 +9,12 @@ from unittest.mock import patch
 import requests
 
 from backend.app.imports.apify import ApifyGoogleMapsAdapter
+from backend.app.imports.apify_amazon import (
+    AXESSO_ENDPOINT,
+    AXESSO_TIMEOUT,
+    ApifyAmazonReviewsAdapter,
+)
 from backend.app.imports.contracts import ReviewImportError
-from backend.app.imports.outscraper import OutscraperAmazonAdapter
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -69,30 +73,76 @@ def load_fixture(name):
 class ImportAdapterTests(unittest.TestCase):
     """Verify exact provider calls, decoding, and safe failures."""
 
-    def test_outscraper_uses_one_minimal_synchronous_request(self):
-        """Send the approved small Amazon request without personal fields."""
+    def test_axesso_uses_one_bounded_request_for_each_allowed_limit(self):
+        """Map each shared limit to one exact Axesso Actor request."""
 
-        session = FakeSession(FakeResponse(payload=load_fixture("outscraper_amazon_reviews.json")))
-        with patch.dict(os.environ, {"OUTSCRAPER_API_KEY": "  test-outs-key  "}, clear=False):
-            result = OutscraperAmazonAdapter(session=session).fetch(
-                "https://www.amazon.com/dp/B000000000", 5
+        for limit, max_pages in ((10, 1), (20, 2), (50, 5), (100, 10)):
+            with self.subTest(limit=limit):
+                session = FakeSession(
+                    FakeResponse(payload=load_fixture("apify_axesso_amazon_reviews.json"))
+                )
+                with patch.dict(
+                    os.environ, {"APIFY_API_TOKEN": "  test-apify-token  "}, clear=False
+                ):
+                    result = ApifyAmazonReviewsAdapter(session=session).fetch(
+                        "https://www.amazon.com/dp/B000000000", limit
+                    )
+
+                self.assertEqual(len(session.calls), 1)
+                method, url, kwargs = session.calls[0]
+                self.assertEqual((method, url), ("post", AXESSO_ENDPOINT))
+                self.assertNotIn("token=", url)
+                self.assertEqual(
+                    kwargs["headers"]["Authorization"], "Bearer test-apify-token"
+                )
+                self.assertEqual(kwargs["timeout"], AXESSO_TIMEOUT)
+                self.assertEqual(
+                    kwargs["json"],
+                    {
+                        "input": [
+                            {
+                                "asin": "B000000000",
+                                "domainCode": "com",
+                                "sortBy": "helpful",
+                                "maxPages": max_pages,
+                            }
+                        ]
+                    },
+                )
+                self.assertEqual(result.title, "Fixture product")
+                self.assertEqual(result.source_key, "B000000000")
+                self.assertEqual(len(result.reviews), 2)
+                self.assertEqual(result.reviews[0].title, "Reliable every morning")
+                self.assertEqual(
+                    result.reviews[0].body,
+                    "The controls are simple and the results are consistent.",
+                )
+                self.assertEqual(result.reviews[0].rating, "5.0 out of 5 stars")
+                self.assertEqual(
+                    result.reviews[0].date,
+                    "Reviewed in the United States on July 20, 2026",
+                )
+                for marker in (
+                    "discard-reviewer-marker",
+                    "discard-profile-marker",
+                    "discard-image-marker",
+                    "discard-variation-marker",
+                    "discard-helpful-marker",
+                    "discard-unsuccessful",
+                ):
+                    self.assertNotIn(marker, repr(result))
+
+    def test_axesso_valid_empty_result_returns_no_candidates(self):
+        """Let the import service own the safe no-review failure mapping."""
+
+        session = FakeSession(FakeResponse(payload=[]))
+        with patch.dict(os.environ, {"APIFY_API_TOKEN": "test-token"}, clear=False):
+            result = ApifyAmazonReviewsAdapter(session=session).fetch(
+                "https://www.amazon.com/dp/B000000000", 10
             )
 
-        self.assertEqual(len(session.calls), 1)
-        method, url, kwargs = session.calls[0]
-        self.assertEqual((method, url), ("get", "https://api.outscraper.com/amazon-reviews"))
-        self.assertEqual(kwargs["headers"], {"X-API-KEY": "test-outs-key"})
-        self.assertEqual(kwargs["timeout"], (5, 30))
-        self.assertEqual(kwargs["params"]["query"], "https://www.amazon.com/dp/B000000000")
-        self.assertEqual(kwargs["params"]["limit"], 5)
-        self.assertEqual(kwargs["params"]["async"], "false")
-        self.assertEqual(
-            kwargs["params"]["fields"],
-            "product_asin,title,body,rating,date",
-        )
         self.assertEqual(result.source_key, "B000000000")
-        self.assertEqual(len(result.reviews), 2)
-        self.assertNotIn("discard-reviewer-marker", repr(result))
+        self.assertEqual(result.reviews, ())
 
     def test_apify_uses_one_private_bearer_request_and_disables_personal_data(self):
         """Use bearer auth and explicitly disable Actor personal data."""
@@ -132,34 +182,52 @@ class ImportAdapterTests(unittest.TestCase):
         """Require only the selected backend credential before network work."""
 
         for adapter, variable in (
-            (OutscraperAmazonAdapter(session=FakeSession(FakeResponse())), "OUTSCRAPER_API_KEY"),
+            (
+                ApifyAmazonReviewsAdapter(session=FakeSession(FakeResponse())),
+                "APIFY_API_TOKEN",
+            ),
             (ApifyGoogleMapsAdapter(session=FakeSession(FakeResponse())), "APIFY_API_TOKEN"),
         ):
             with self.subTest(variable=variable), patch.dict(os.environ, {variable: "  "}, clear=False):
                 with self.assertRaises(ReviewImportError) as raised:
-                    adapter.fetch("https://example.test/source", 5)
+                    adapter.fetch("https://example.test/source", 10)
                 self.assertEqual(raised.exception.code, "missing_provider_key")
                 self.assertEqual(adapter.session.calls, [])
 
-    def test_statuses_transport_and_schema_failures_are_safely_mapped(self):
-        """Reduce upstream failures to application-owned codes."""
+    def test_axesso_rejects_invalid_amazon_source_before_http(self):
+        """Keep direct adapter use from sending a malformed Actor input."""
+
+        session = FakeSession(FakeResponse(payload=[]))
+        with patch.dict(os.environ, {"APIFY_API_TOKEN": "test-token"}, clear=False):
+            with self.assertRaises(ReviewImportError) as raised:
+                ApifyAmazonReviewsAdapter(session=session).fetch(
+                    "https://www.amazon.com/s?k=kettle", 10
+                )
+
+        self.assertEqual(raised.exception.code, "invalid_import_url")
+        self.assertEqual(session.calls, [])
+
+    def test_axesso_statuses_transport_and_schema_failures_are_safely_mapped(self):
+        """Reduce Axesso failures to application-owned codes."""
 
         cases = (
-            (FakeResponse(401, {}), "provider_auth_failed"),
-            (FakeResponse(402, {}), "provider_quota_exhausted"),
-            (FakeResponse(429, {}), "provider_unavailable"),
-            (FakeResponse(503, {}), "provider_unavailable"),
+            (FakeResponse(401, []), "provider_auth_failed"),
+            (FakeResponse(402, []), "provider_quota_exhausted"),
+            (FakeResponse(429, []), "provider_unavailable"),
+            (FakeResponse(503, []), "provider_unavailable"),
             (requests.Timeout("secret timeout"), "import_timeout"),
             (requests.ConnectionError("secret socket"), "provider_unavailable"),
             (FakeResponse(200, json_error=ValueError("secret body")), "provider_response_invalid"),
+            (FakeResponse(200, {}), "provider_response_invalid"),
+            (FakeResponse(200, [1]), "provider_response_invalid"),
         )
         for response, expected in cases:
             with self.subTest(expected=expected):
                 session = FakeSession(response)
-                adapter = ApifyGoogleMapsAdapter(session=session)
+                adapter = ApifyAmazonReviewsAdapter(session=session)
                 with patch.dict(os.environ, {"APIFY_API_TOKEN": "secret-token"}, clear=False):
                     with self.assertRaises(ReviewImportError) as raised:
-                        adapter.fetch("https://www.google.com/maps/place/Test", 5)
+                        adapter.fetch("https://www.amazon.com/dp/B000000000", 10)
                 self.assertEqual(raised.exception.code, expected)
                 self.assertNotIn("secret", str(raised.exception))
 
