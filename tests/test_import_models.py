@@ -17,6 +17,55 @@ from backend.app.models import (
 class ImportModelTests(unittest.TestCase):
     """Cover additive import contracts and compatibility defaults."""
 
+    def test_provider_collection_accepts_one_hundred_reviews_and_rejects_larger_counts(self):
+        """Allow the approved import ceiling without weakening exact provenance."""
+
+        reviews = [
+            Review(id=f"r{index}", text=f"Useful imported review number {index}.")
+            for index in range(100)
+        ]
+        source = SourceInfo(
+            url="https://www.amazon.com/dp/B000000000",
+            title="Amazon product B000000000",
+            extractor="provider_api",
+            is_demo=False,
+            platform="amazon",
+            provider="Apify (Axesso)",
+            requested_count=100,
+            retrieved_count=100,
+            retrieved_at="2026-07-23T12:00:00+00:00",
+            cache_status="miss",
+        )
+
+        collection = CollectionResult(source=source, reviews=reviews)
+
+        self.assertEqual(len(collection.reviews), 100)
+        with self.assertRaises(ValidationError):
+            SourceInfo.model_validate(
+                {**source.model_dump(mode="json"), "requested_count": 101}
+            )
+        with self.assertRaises(ValidationError):
+            SourceInfo.model_validate(
+                {**source.model_dump(mode="json"), "retrieved_count": 101}
+            )
+
+    def test_import_request_accepts_one_hundred_and_rejects_above_ceiling(self):
+        """Expand only the provider import request boundary to one hundred."""
+
+        request = ImportRequest(
+            platform="amazon",
+            url="https://www.amazon.com/dp/B000000000",
+            limit=100,
+        )
+
+        self.assertEqual(request.limit, 100)
+        with self.assertRaises(ValidationError):
+            ImportRequest(
+                platform="amazon",
+                url="https://www.amazon.com/dp/B000000000",
+                limit=101,
+            )
+
     def test_old_source_payload_keeps_backward_compatible_defaults(self):
         """Keep old generic sources valid without synthetic import metadata."""
 

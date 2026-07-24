@@ -35,14 +35,21 @@ class StagedContractTests(unittest.TestCase):
     def test_analysis_request_accepts_only_a_source_and_two_to_forty_reviews(self):
         """Require displayed evidence rather than a URL/provider analysis request."""
 
+        forty_reviews = [
+            Review(
+                id=f"r{index}",
+                text=f"Detailed review number {index} with sufficient useful product evidence.",
+            )
+            for index in range(40)
+        ]
         request = AnalysisRequest.model_validate(
             {
                 "source": live_source().model_dump(mode="json"),
-                "reviews": [review.model_dump() for review in request_reviews()],
+                "reviews": [review.model_dump() for review in forty_reviews],
             }
         )
-        self.assertEqual(len(request.reviews), 2)
-        self.assertEqual(request.to_collection().source, live_source())
+        self.assertEqual(request.source, live_source())
+        self.assertEqual(request.reviews, forty_reviews)
 
         with self.assertRaises(ValidationError):
             AnalysisRequest.model_validate(

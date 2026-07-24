@@ -40,8 +40,8 @@ class SourceInfo(BaseModel):
     is_demo: bool
     platform: Literal["generic", "amazon", "google_maps", "demo"] = "generic"
     provider: str | None = None
-    requested_count: int | None = Field(default=None, ge=1, le=40)
-    retrieved_count: int | None = Field(default=None, ge=0, le=40)
+    requested_count: int | None = Field(default=None, ge=1, le=100)
+    retrieved_count: int | None = Field(default=None, ge=0, le=100)
     retrieved_at: datetime | None = None
     cache_status: Literal["not_applicable", "miss", "hit", "refresh"] = "not_applicable"
 
@@ -104,7 +104,7 @@ class ImportRequest(BaseModel):
 
     platform: Literal["amazon", "google_maps"]
     url: HttpUrl
-    limit: int = Field(ge=1, le=40)
+    limit: int = Field(ge=1, le=100)
     refresh: bool = False
 
 
@@ -133,11 +133,6 @@ class AnalysisRequest(BaseModel):
 
     source: SourceInfo
     reviews: list[Review] = Field(min_length=2, max_length=40)
-
-    def to_collection(self) -> CollectionResult:
-        """Reconstitute the validated collection consumed by the analysis stage."""
-
-        return CollectionResult(source=self.source, reviews=self.reviews)
 
 
 class ReviewSentiment(BaseModel):
