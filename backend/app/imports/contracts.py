@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 
+IMPORT_LIMITS = (10, 20, 50, 100)
+
+
 class ReviewImportError(Exception):
     """Carry one application-owned import failure code without raw details."""
 

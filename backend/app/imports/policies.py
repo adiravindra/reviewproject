@@ -24,6 +24,17 @@ class ValidatedImportSource:
     source_key: str
 
 
+def extract_amazon_asin(source_url: str) -> str | None:
+    """Extract an ASIN from one of the approved Amazon product path shapes."""
+
+    try:
+        path = urlsplit(source_url).path
+    except (TypeError, ValueError):
+        return None
+    match = _ASIN_PATH.search(path)
+    return match.group(1).upper() if match else None
+
+
 def validate_import_source(platform: str, source_url: str) -> ValidatedImportSource:
     """Apply the selected platform's strict HTTPS URL allowlist."""
 
@@ -48,10 +59,10 @@ def validate_import_source(platform: str, source_url: str) -> ValidatedImportSou
     if platform == "amazon":
         if host not in {"amazon.com", "www.amazon.com"}:
             raise ReviewImportError("invalid_import_url")
-        match = _ASIN_PATH.search(parsed.path)
-        if match is None:
+        asin = extract_amazon_asin(source_url)
+        if asin is None:
             raise ReviewImportError("invalid_import_url")
-        return ValidatedImportSource(source_url, normalized, match.group(1).upper())
+        return ValidatedImportSource(source_url, normalized, asin)
 
     if host == "maps.app.goo.gl":
         if parsed.path in {"", "/"}:

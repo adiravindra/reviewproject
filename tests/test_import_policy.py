@@ -2,12 +2,34 @@
 
 import unittest
 
-from backend.app.imports.contracts import ReviewImportError
-from backend.app.imports.policies import validate_import_source
+from backend.app.imports.apify import ApifyGoogleMapsAdapter
+from backend.app.imports.contracts import IMPORT_LIMITS, ReviewImportError
+from backend.app.imports.policies import extract_amazon_asin, validate_import_source
 
 
 class ImportPolicyTests(unittest.TestCase):
     """Cover the exact source URL allowlists for both platforms."""
+
+    def test_shared_import_limits_are_used_by_google_adapter(self):
+        """Keep platform limits on one provider-neutral policy tuple."""
+
+        self.assertEqual(IMPORT_LIMITS, (10, 20, 50, 100))
+        self.assertIs(ApifyGoogleMapsAdapter.allowed_limits, IMPORT_LIMITS)
+
+    def test_extract_amazon_asin_supports_only_approved_product_paths(self):
+        """Return uppercase ASINs without accepting search or near-match paths."""
+
+        cases = {
+            "https://www.amazon.com/dp/b000000000": "B000000000",
+            "https://amazon.com/gp/product/1612680194?tag=example": "1612680194",
+            "https://amazon.com/gp/aw/d/b000000000": "B000000000",
+            "https://amazon.com/s?k=kettle": None,
+            "https://amazon.com/product-reviews/B000000000": None,
+        }
+
+        for url, expected in cases.items():
+            with self.subTest(url=url):
+                self.assertEqual(extract_amazon_asin(url), expected)
 
     def test_amazon_accepts_product_paths_and_returns_asin_identity(self):
         """Use recognized Amazon product paths and ASIN cache identity."""

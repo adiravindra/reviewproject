@@ -4,6 +4,7 @@ import unittest
 from datetime import datetime, timezone
 
 from backend.app.imports.contracts import (
+    IMPORT_LIMITS,
     ProviderImportResult,
     ProviderReviewCandidate,
     ReviewImportError,
@@ -21,7 +22,7 @@ class FakeAdapter:
     provider_key = "fake_amazon"
     provider_label = "Fixture Provider"
     platform = "amazon"
-    allowed_limits = (5, 10, 12)
+    allowed_limits = IMPORT_LIMITS
 
     def __init__(self, result=None, error=None):
         """Configure one normal result or safe adapter failure."""
@@ -70,7 +71,7 @@ class FakeCache:
         self.value = value
 
 
-def request(refresh=False, limit=5):
+def request(refresh=False, limit=20):
     """Build one approved Amazon import request."""
 
     return ImportRequest(
@@ -99,7 +100,15 @@ class ImportServiceTests(unittest.TestCase):
         options = self.service.options()
         self.assertEqual(
             options.model_dump(),
-            {"platforms": [{"key": "amazon", "label": "Amazon product", "limits": [5, 10, 12]}]},
+            {
+                "platforms": [
+                    {
+                        "key": "amazon",
+                        "label": "Amazon product",
+                        "limits": [10, 20, 50, 100],
+                    }
+                ]
+            },
         )
         self.assertEqual(self.adapter.calls, [])
 
@@ -108,11 +117,11 @@ class ImportServiceTests(unittest.TestCase):
 
         result = self.service.import_reviews(request())
 
-        self.assertEqual(self.adapter.calls, [("https://www.amazon.com/dp/B000000000", 5)])
+        self.assertEqual(self.adapter.calls, [("https://www.amazon.com/dp/B000000000", 20)])
         self.assertEqual(len(self.cache.put_calls), 1)
         self.assertEqual(result.source.provider, "Fixture Provider")
         self.assertEqual(result.source.platform, "amazon")
-        self.assertEqual(result.source.requested_count, 5)
+        self.assertEqual(result.source.requested_count, 20)
         self.assertEqual(result.source.retrieved_count, 2)
         self.assertEqual(result.source.cache_status, "miss")
         self.assertEqual(result.source.retrieved_at, NOW)
@@ -147,10 +156,13 @@ class ImportServiceTests(unittest.TestCase):
     def test_invalid_limit_and_too_few_reviews_fail_safely(self):
         """Reject unsupported limits and insufficient written evidence."""
 
-        with self.assertRaises(ReviewImportError) as raised:
-            self.service.import_reviews(request(limit=6))
-        self.assertEqual(raised.exception.code, "unsupported_import_limit")
+        for limit in (5, 25):
+            with self.subTest(limit=limit):
+                with self.assertRaises(ReviewImportError) as raised:
+                    self.service.import_reviews(request(limit=limit))
+                self.assertEqual(raised.exception.code, "unsupported_import_limit")
         self.assertEqual(self.adapter.calls, [])
+        self.assertEqual(self.cache.get_calls, [])
 
         self.adapter.result = ProviderImportResult(
             "Fixture", "https://www.amazon.com/dp/B000000000", "B000000000",

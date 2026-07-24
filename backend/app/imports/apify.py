@@ -6,6 +6,7 @@ from typing import Any
 import requests
 
 from backend.app.imports.contracts import (
+    IMPORT_LIMITS,
     ProviderImportResult,
     ProviderReviewCandidate,
     ReviewImportError,
@@ -26,7 +27,7 @@ class ApifyGoogleMapsAdapter:
     provider_key = "apify_google_maps"
     provider_label = "Apify"
     platform = "google_maps"
-    allowed_limits = (5, 10, 20)
+    allowed_limits = IMPORT_LIMITS
 
     def __init__(self, *, session=requests):
         """Accept an injectable HTTP boundary for fixture-only tests."""
