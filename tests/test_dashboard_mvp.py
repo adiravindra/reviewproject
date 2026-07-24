@@ -153,6 +153,81 @@ def sample_report():
     }
 
 
+def provider_collection(review_count: int) -> dict:
+    """Build imported provider evidence with truthful source provenance."""
+
+    return {
+        "source": {
+            "url": "https://www.amazon.com/dp/B000000000",
+            "title": "Fixture product",
+            "extractor": "provider_api",
+            "is_demo": False,
+            "platform": "amazon",
+            "provider": "Apify (Axesso)",
+            "requested_count": review_count,
+            "retrieved_count": review_count,
+            "retrieved_at": "2026-07-23T12:00:00Z",
+            "cache_status": "miss",
+        },
+        "reviews": [
+            {
+                "id": f"r{index + 1}",
+                "text": f"Imported review number {index + 1} has useful product evidence.",
+                "rating": 5,
+            }
+            for index in range(review_count)
+        ],
+    }
+
+
+def provider_report(imported_count: int, analyzed_count: int = 40) -> dict:
+    """Build one rendered report for a bounded imported subset."""
+
+    collection = provider_collection(imported_count)
+    reviews = collection["reviews"][:analyzed_count]
+    return {
+        "source": collection["source"],
+        "metrics": {
+            "review_count": analyzed_count,
+            "rated_count": analyzed_count,
+            "average_rating": 5.0,
+            "positive_percentage": 100.0,
+            "sentiment_counts": {
+                "positive": analyzed_count,
+                "neutral": 0,
+                "negative": 0,
+            },
+            "rating_distribution": {
+                "1": 0,
+                "2": 0,
+                "3": 0,
+                "4": 0,
+                "5": analyzed_count,
+            },
+        },
+        "insights": {
+            "summary": "The analyzed subset consistently describes useful product evidence.",
+            "overall_sentiment": "positive",
+            "themes": [
+                {
+                    "name": "Consistency",
+                    "description": "Customers consistently report useful product evidence.",
+                    "mentions": analyzed_count,
+                    "sentiment": "positive",
+                }
+            ],
+            "strengths": ["Consistent results"],
+            "weaknesses": [],
+            "actions": [],
+            "review_sentiments": [
+                {"review_id": review["id"], "sentiment": "positive"}
+                for review in reviews
+            ],
+        },
+        "reviews": reviews,
+    }
+
+
 class DashboardClientTests(unittest.TestCase):
     """Group HTTP-client timeout, decoding, and safe-error contracts."""
 
@@ -245,10 +320,14 @@ class DashboardClientTests(unittest.TestCase):
 
         options = {
             "platforms": [
-                {"key": "amazon", "label": "Amazon product", "limits": [5, 10, 12]}
+                {
+                    "key": "amazon",
+                    "label": "Amazon product",
+                    "limits": [10, 20, 50, 100],
+                }
             ]
         }
-        collection = {"source": {"provider": "Outscraper"}, "reviews": [{}, {}]}
+        collection = {"source": {"provider": "Apify (Axesso)"}, "reviews": [{}, {}]}
         session = FakeSession(
             get_responses={
                 "http://127.0.0.1:8000/api/import/options": FakeResponse(options)
@@ -266,7 +345,7 @@ class DashboardClientTests(unittest.TestCase):
             request_import(
                 "amazon",
                 "https://www.amazon.com/dp/B000000000",
-                5,
+                20,
                 False,
                 "http://127.0.0.1:8000/",
                 session=session,
@@ -283,10 +362,10 @@ class DashboardClientTests(unittest.TestCase):
                     {
                         "platform": "amazon",
                         "url": "https://www.amazon.com/dp/B000000000",
-                        "limit": 5,
+                        "limit": 20,
                         "refresh": False,
                     },
-                    65,
+                    130,
                 ),
             ],
         )
@@ -786,7 +865,7 @@ class DashboardFormattingTests(unittest.TestCase):
                 "url": "https://www.amazon.com/dp/B000000000",
                 "extractor": "provider_api",
                 "platform": "amazon",
-                "provider": "Outscraper",
+                "provider": "Apify (Axesso)",
                 "requested_count": 10,
                 "retrieved_count": 7,
                 "retrieved_at": "2026-07-22T12:00:00+00:00",
@@ -798,27 +877,56 @@ class DashboardFormattingTests(unittest.TestCase):
         joined = " ".join(details)
         for value in (
             "https://www.amazon.com/dp/B000000000",
-            "Amazon via Outscraper",
+            "Amazon via Apify (Axesso)",
             "Retrieved 7 usable written reviews - Requested 10",
             "2026-07-22 12:00:00",
             "Cached result",
         ):
             self.assertIn(value, joined)
 
-    def test_analysis_call_forwards_only_collection_and_base_url(self):
-        """Keep the UI client contract free of a retired analysis argument."""
+    def test_source_details_discloses_only_analyzed_report_subsets(self):
+        """Distinguish imported evidence from a report containing only the first 40."""
 
-        collection = {"source": {}, "reviews": []}
-        calls = []
+        source = provider_collection(100)["source"]
 
-        def fake_request(received_collection, received_base_url):
-            """Record the exact staged UI client call without a network request."""
+        pre_analysis = source_details(source, review_count=100)
+        report = source_details(source, review_count=40)
 
-            calls.append((received_collection, received_base_url))
-            return {"ok": True}
+        self.assertNotIn("reviews analyzed", " ".join(pre_analysis))
+        self.assertIn("40 of 100 reviews analyzed", " ".join(report))
 
-        self.assertEqual(analysis_call(collection, "http://api", request=fake_request), {"ok": True})
-        self.assertEqual(calls, [(collection, "http://api")])
+    def test_analysis_call_sends_at_most_first_forty_without_mutating_import(self):
+        """Copy the bounded analysis payload while preserving order and provenance."""
+
+        for review_count in (40, 50, 100):
+            with self.subTest(review_count=review_count):
+                collection = provider_collection(review_count)
+                original = json.loads(json.dumps(collection))
+                calls = []
+
+                def fake_request(received_collection, received_base_url):
+                    """Record the exact staged UI client call without a network request."""
+
+                    calls.append((received_collection, received_base_url))
+                    return {"ok": True}
+
+                self.assertEqual(
+                    analysis_call(collection, "http://api", request=fake_request),
+                    {"ok": True},
+                )
+                submitted, base_url = calls[0]
+                self.assertEqual(base_url, "http://api")
+                self.assertEqual(
+                    submitted["reviews"],
+                    collection["reviews"][:40],
+                )
+                self.assertEqual(submitted["source"], collection["source"])
+                self.assertEqual(
+                    submitted["source"]["retrieved_count"],
+                    review_count,
+                )
+                self.assertEqual(collection, original)
+                self.assertIsNot(submitted, collection)
         self.assertEqual(list(inspect.signature(analysis_call).parameters), ["collection", "base_url", "request"])
 
     def test_failed_refresh_preserves_displayed_collection(self):
@@ -859,7 +967,7 @@ class DashboardFormattingTests(unittest.TestCase):
                 "http://api",
                 "amazon",
                 "https://www.amazon.com/dp/B000000000",
-                5,
+                20,
                 refresh=True,
             )
 
@@ -900,8 +1008,16 @@ class DashboardRuntimeTests(unittest.TestCase):
 
         options = {
             "platforms": [
-                {"key": "amazon", "label": "Amazon product", "limits": [5, 10, 12]},
-                {"key": "google_maps", "label": "Google Maps place", "limits": [5, 10, 20]},
+                {
+                    "key": "amazon",
+                    "label": "Amazon product",
+                    "limits": [10, 20, 50, 100],
+                },
+                {
+                    "key": "google_maps",
+                    "label": "Google Maps place",
+                    "limits": [10, 20, 50, 100],
+                },
             ]
         }
         app = AppTest.from_file(streamlit_app.__file__)
@@ -915,9 +1031,59 @@ class DashboardRuntimeTests(unittest.TestCase):
         self.assertEqual(list(app.exception), [])
         self.assertIn("Review source", [element.label for element in app.selectbox])
         self.assertIn("Review limit", [element.label for element in app.selectbox])
+        self.assertEqual([element.label for element in app.text_input], ["Source URL"])
+        self.assertEqual(
+            app.text_input[0].proto.placeholder,
+            "Paste an Amazon product or Google Maps place URL",
+        )
+        self.assertNotIn(
+            "Amazon product URL",
+            [element.label for element in app.text_input],
+        )
+        self.assertNotIn(
+            "Google Maps place URL",
+            [element.label for element in app.text_input],
+        )
+        limit_selector = next(
+            element for element in app.selectbox if element.label == "Review limit"
+        )
+        self.assertEqual(limit_selector.options, ["10", "20", "50", "100"])
+        self.assertEqual(limit_selector.value, 20)
         self.assertIn("Import reviews", [element.label for element in app.button])
         option_call.assert_called_once()
         import_call.assert_not_called()
+
+    def test_fifty_imported_reviews_render_and_analyze_only_first_forty(self):
+        """Display all evidence, disclose the cap, and submit one first-40 copy."""
+
+        collection = provider_collection(50)
+        report = provider_report(50)
+        app = AppTest.from_file(streamlit_app.__file__)
+        app.session_state["collection"] = collection
+        with (
+            patch("dashboard.api_client.check_health", return_value=True),
+            patch("dashboard.api_client.request_analysis", return_value=report) as request_call,
+            patch("dashboard.api_client.request_history", return_value=[]),
+        ):
+            app.run(timeout=30)
+            self.assertEqual(len(app.dataframe[0].value), 50)
+            self.assertIn(
+                "Groq will analyze the first 40 of 50 imported reviews.",
+                [element.value for element in app.caption],
+            )
+            next(
+                button for button in app.button if button.label == "Analyze with Groq"
+            ).click()
+            app.run(timeout=30)
+
+        submitted = request_call.call_args.args[0]
+        self.assertEqual(submitted["reviews"], collection["reviews"][:40])
+        self.assertEqual(submitted["source"]["retrieved_count"], 50)
+        self.assertEqual(len(collection["reviews"]), 50)
+        self.assertIn(
+            "40 of 50 reviews analyzed",
+            " ".join(element.value for element in app.caption),
+        )
 
     def test_pre_analysis_runtime_keeps_evidence_visible_without_an_expander(self):
         """Render collected evidence directly before any report exists."""

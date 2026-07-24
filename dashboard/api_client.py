@@ -116,7 +116,7 @@ def request_import(
         "limit": limit,
         "refresh": refresh,
     }
-    response = _perform_request(lambda: session.post(endpoint, json=payload, timeout=65))
+    response = _perform_request(lambda: session.post(endpoint, json=payload, timeout=130))
     return _decode_success(
         response,
         lambda decoded: (

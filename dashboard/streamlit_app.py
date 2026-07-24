@@ -23,6 +23,7 @@ from dashboard.api_client import (
 
 
 APP_COMMAND = r".\.venv\Scripts\python.exe run_app.py"
+MAX_ANALYSIS_REVIEWS = 40
 
 DASHBOARD_CSS = """
 :root {
@@ -367,6 +368,12 @@ def source_details(source: dict[str, Any], *, review_count: int) -> list[str]:
         details.append(
             f"Retrieved {actual} usable written reviews - Requested {requested}"
         )
+        if (
+            isinstance(actual, int)
+            and not isinstance(actual, bool)
+            and review_count < actual
+        ):
+            details.append(f"{review_count} of {actual} reviews analyzed")
         if source.get("retrieved_at"):
             details.append(f"Fetched: {format_history_timestamp(source['retrieved_at'])}")
         cache_label = {
@@ -427,7 +434,11 @@ def analysis_call(
 ) -> dict[str, Any]:
     """Call the staged analysis client with precisely its collection contract."""
 
-    return request(collection, base_url)
+    analysis_collection = {
+        **collection,
+        "reviews": list(collection.get("reviews", []))[:MAX_ANALYSIS_REVIEWS],
+    }
+    return request(analysis_collection, base_url)
 
 
 def sentiment_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
@@ -875,7 +886,7 @@ def main() -> None:
     demo_selected = False
     selected_platform: dict[str, Any] | None = None
     url = ""
-    limit = 5
+    limit = 20
     with st.form("review-import-form"):
         if platforms:
             selected_index = st.selectbox(
@@ -884,15 +895,14 @@ def main() -> None:
                 format_func=lambda index: str(platforms[index].get("label", "Review source")),
             )
             selected_platform = platforms[int(selected_index)]
-            platform_key = str(selected_platform.get("key", "amazon"))
-            url_label = "Amazon product URL" if platform_key == "amazon" else "Google Maps place URL"
-            placeholder = (
-                "https://www.amazon.com/dp/B000000000"
-                if platform_key == "amazon"
-                else "https://www.google.com/maps/place/..."
+            url = st.text_input(
+                "Source URL",
+                placeholder="Paste an Amazon product or Google Maps place URL",
             )
-            url = st.text_input(url_label, placeholder=placeholder)
-            limits = [int(value) for value in selected_platform.get("limits", [5])]
+            limits = [
+                int(value)
+                for value in selected_platform.get("limits", [10, 20, 50, 100])
+            ]
             limit = int(st.selectbox("Review limit", limits, index=min(1, len(limits) - 1)))
         else:
             st.info("Import choices are unavailable until the backend is reachable.")
@@ -956,6 +966,12 @@ def main() -> None:
                         int(source.get("requested_count", len(collection.get("reviews", [])))),
                         refresh=True,
                     )
+            imported_count = len(collection.get("reviews", []))
+            if imported_count > MAX_ANALYSIS_REVIEWS:
+                st.caption(
+                    f"Groq will analyze the first {MAX_ANALYSIS_REVIEWS} of "
+                    f"{imported_count} imported reviews."
+                )
             if report is None and st.button("Analyze with Groq", type="primary", width="stretch"):
                 if not check_health(base_url):
                     _unavailable()
