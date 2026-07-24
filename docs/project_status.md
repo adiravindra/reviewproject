@@ -60,7 +60,7 @@ Run the full local checks with:
 
 ## Automated verification record
 
-On July 21, 2026, the complete fixture/fake-backed unittest discovery command passed **148/148 tests**, and `compileall -q backend dashboard tests run_app.py` exited with status 0. The automated suite itself does not contact a live review source or Groq; the separate installed-Chrome record below covers the provider-backed bundled demo.
+On July 23, 2026, the complete fixture/fake-backed unittest discovery command passed **196/196 tests**, and `compileall -q backend dashboard tests run_app.py` exited with status 0. The automated suite itself does not contact a live review source or Groq; the separate installed-Chrome record below covers the provider-backed bundled demo.
 
 ## Installed-Google-Chrome verification
 

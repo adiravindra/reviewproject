@@ -67,7 +67,7 @@ class ImportNormalizerTests(unittest.TestCase):
             ),
         )
 
-        normalized = normalize_provider_result(result, limit=5)
+        normalized = normalize_provider_result(result, limit=10)
 
         self.assertEqual(len(normalized.reviews[0].text), 5000)
         self.assertIsNone(normalized.reviews[0].rating)

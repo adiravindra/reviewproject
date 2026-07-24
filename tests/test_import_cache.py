@@ -25,8 +25,8 @@ def collection(status="miss"):
             extractor="provider_api",
             is_demo=False,
             platform="amazon",
-            provider="Outscraper",
-            requested_count=5,
+            provider="Apify (Axesso)",
+            requested_count=20,
             retrieved_count=2,
             retrieved_at=NOW,
             cache_status=status,
@@ -47,7 +47,14 @@ class ImportCacheTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.path = Path(self.temp.name) / "nested" / "imports.db"
         self.store = ImportCacheStore(self.path)
-        self.identity = CacheIdentity("amazon", "outscraper_amazon", "1", "B000000000", 5, "most_relevant")
+        self.identity = CacheIdentity(
+            "amazon",
+            "apify_axesso_amazon",
+            "1",
+            "B000000000",
+            20,
+            "most_relevant",
+        )
 
     def tearDown(self):
         """Remove the temporary cache database."""
@@ -77,12 +84,12 @@ class ImportCacheTests(unittest.TestCase):
 
         self.store.put(self.identity, collection(), NOW, NOW + timedelta(days=30))
         variants = (
-            CacheIdentity("google_maps", "outscraper_amazon", "1", "B000000000", 5, "most_relevant"),
-            CacheIdentity("amazon", "other", "1", "B000000000", 5, "most_relevant"),
-            CacheIdentity("amazon", "outscraper_amazon", "2", "B000000000", 5, "most_relevant"),
-            CacheIdentity("amazon", "outscraper_amazon", "1", "OTHER", 5, "most_relevant"),
-            CacheIdentity("amazon", "outscraper_amazon", "1", "B000000000", 10, "most_relevant"),
-            CacheIdentity("amazon", "outscraper_amazon", "1", "B000000000", 5, "newest"),
+            CacheIdentity("google_maps", "apify_axesso_amazon", "1", "B000000000", 20, "most_relevant"),
+            CacheIdentity("amazon", "other", "1", "B000000000", 20, "most_relevant"),
+            CacheIdentity("amazon", "apify_axesso_amazon", "2", "B000000000", 20, "most_relevant"),
+            CacheIdentity("amazon", "apify_axesso_amazon", "1", "OTHER", 20, "most_relevant"),
+            CacheIdentity("amazon", "apify_axesso_amazon", "1", "B000000000", 50, "most_relevant"),
+            CacheIdentity("amazon", "apify_axesso_amazon", "1", "B000000000", 20, "newest"),
         )
         for variant in variants:
             with self.subTest(variant=variant):

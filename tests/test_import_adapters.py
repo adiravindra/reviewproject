@@ -48,7 +48,7 @@ class FakeSession:
         self.calls = []
 
     def get(self, url, **kwargs):
-        """Record an Outscraper GET."""
+        """Record an unexpected provider GET."""
 
         self.calls.append(("get", url, kwargs))
         if isinstance(self.response, Exception):

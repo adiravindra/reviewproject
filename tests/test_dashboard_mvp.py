@@ -932,7 +932,7 @@ class DashboardFormattingTests(unittest.TestCase):
     def test_failed_refresh_preserves_displayed_collection(self):
         """Keep the last good evidence when an explicit provider refresh fails."""
 
-        previous = {"source": {"provider": "Outscraper"}, "reviews": [{"id": "r1"}]}
+        previous = {"source": {"provider": "Apify (Axesso)"}, "reviews": [{"id": "r1"}]}
 
         class StateRecorder:
             """Provide the Streamlit state and messages used by the helper."""

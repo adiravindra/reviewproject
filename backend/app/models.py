@@ -134,6 +134,24 @@ class AnalysisRequest(BaseModel):
     source: SourceInfo
     reviews: list[Review] = Field(min_length=2, max_length=40)
 
+    @model_validator(mode="after")
+    def validate_provider_subset_provenance(self):
+        """Keep a bounded analysis subset consistent with its imported source."""
+
+        if self.source.extractor == "provider_api":
+            requested = self.source.requested_count
+            retrieved = self.source.retrieved_count
+            if (
+                requested is None
+                or retrieved is None
+                or len(self.reviews) > retrieved
+                or retrieved > requested
+            ):
+                raise ValueError(
+                    "Provider analysis provenance must contain consistent import counts."
+                )
+        return self
+
 
 class ReviewSentiment(BaseModel):
     """Associate exactly one constrained sentiment with a submitted review ID."""

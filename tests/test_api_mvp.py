@@ -326,6 +326,29 @@ class ApiTests(unittest.TestCase):
         service.assert_not_called()
         self.assertEqual(history.saved_reports, [])
 
+    def test_analyze_rejects_inconsistent_provider_provenance_before_service(self):
+        """Keep impossible imported counts away from Groq and history."""
+
+        for source_update in (
+            {"requested_count": None},
+            {"retrieved_count": None},
+            {"retrieved_count": 39},
+            {"requested_count": 20, "retrieved_count": 50},
+        ):
+            with self.subTest(source_update=source_update):
+                payload = provider_subset_payload()
+                payload["source"].update(source_update)
+                service = Mock(return_value=provider_subset_response())
+                history = FakeHistoryStore()
+
+                response = TestClient(
+                    create_app(analysis_service=service, history_store=history)
+                ).post("/api/analyze", json=payload)
+
+                self.assertEqual(response.status_code, 422)
+                service.assert_not_called()
+                self.assertEqual(history.saved_reports, [])
+
     def test_analysis_failure_does_not_save_history(self):
         """Never persist a report when analysis itself did not succeed."""
 

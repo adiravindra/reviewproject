@@ -5,6 +5,7 @@ import unittest
 from pydantic import ValidationError
 
 from backend.app.models import (
+    AnalysisRequest,
     CollectionResult,
     ImportOptions,
     ImportPlatformOption,
@@ -16,6 +17,43 @@ from backend.app.models import (
 
 class ImportModelTests(unittest.TestCase):
     """Cover additive import contracts and compatibility defaults."""
+
+    def test_provider_analysis_subset_requires_consistent_import_provenance(self):
+        """Reject provider subsets that claim impossible imported counts."""
+
+        reviews = [
+            Review(id=f"r{index}", text=f"Useful analyzed review number {index}.")
+            for index in range(40)
+        ]
+        valid_source = SourceInfo(
+            url="https://www.amazon.com/dp/B000000000",
+            title="Fixture product",
+            extractor="provider_api",
+            is_demo=False,
+            platform="amazon",
+            provider="Apify (Axesso)",
+            requested_count=100,
+            retrieved_count=100,
+            retrieved_at="2026-07-23T12:00:00Z",
+            cache_status="miss",
+        )
+
+        request = AnalysisRequest(source=valid_source, reviews=reviews)
+
+        self.assertEqual(len(request.reviews), 40)
+        for source_update in (
+            {"requested_count": None},
+            {"retrieved_count": None},
+            {"retrieved_count": 39},
+            {"requested_count": 50, "retrieved_count": 100},
+            {"requested_count": 1, "retrieved_count": 2},
+        ):
+            with self.subTest(source_update=source_update):
+                source = SourceInfo.model_validate(
+                    {**valid_source.model_dump(mode="json"), **source_update}
+                )
+                with self.assertRaises(ValidationError):
+                    AnalysisRequest(source=source, reviews=reviews)
 
     def test_provider_collection_accepts_one_hundred_reviews_and_rejects_larger_counts(self):
         """Allow the approved import ceiling without weakening exact provenance."""
@@ -92,8 +130,8 @@ class ImportModelTests(unittest.TestCase):
             extractor="provider_api",
             is_demo=False,
             platform="amazon",
-            provider="Outscraper",
-            requested_count=5,
+            provider="Apify (Axesso)",
+            requested_count=10,
             retrieved_count=2,
             retrieved_at="2026-07-22T12:00:00+00:00",
             cache_status="miss",
@@ -123,18 +161,18 @@ class ImportModelTests(unittest.TestCase):
                 ImportPlatformOption(
                     key="google_maps",
                     label="Google Maps place",
-                    limits=[5, 10, 20],
+                    limits=[10, 20, 50, 100],
                 )
             ]
         )
 
         self.assertFalse(request.refresh)
-        self.assertEqual(options.platforms[0].limits, [5, 10, 20])
+        self.assertEqual(options.platforms[0].limits, [10, 20, 50, 100])
         with self.assertRaises(ValidationError):
             ImportRequest(
                 platform="amazon",
                 url="https://www.amazon.com/dp/B000000000",
-                limit=5,
+                limit=10,
                 secret="not-allowed",
             )
 
