@@ -16,6 +16,7 @@ from backend.app.imports.apify_amazon import (
     ApifyAmazonReviewsAdapter,
 )
 from backend.app.imports.contracts import ReviewImportError
+from backend.app.imports.normalizer import normalize_provider_result
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -126,6 +127,26 @@ class ImportAdapterTests(unittest.TestCase):
                         "Important reliability concern",
                     ],
                 )
+                normalized = normalize_provider_result(result, limit)
+                self.assertEqual(len(normalized.reviews), 3)
+                self.assertEqual([review.rating for review in normalized.reviews], [5, 3, 1])
+                self.assertEqual(
+                    [(review.text, review.date) for review in normalized.reviews],
+                    [
+                        (
+                            "Most useful positive review — The laptop is fast, quiet, and lasts through a full workday.",
+                            "2026-07-20",
+                        ),
+                        (
+                            "Useful but mixed — Performance is steady, although the port selection is only adequate.",
+                            "2026-07-18",
+                        ),
+                        (
+                            "Important reliability concern — The display began flickering after several days of ordinary use.",
+                            "2026-07-16",
+                        ),
+                    ],
+                )
                 for marker in (
                     "discard-reviewer-marker",
                     "discard-profile",
@@ -135,6 +156,7 @@ class ImportAdapterTests(unittest.TestCase):
                     "discard-negative-reviewer",
                 ):
                     self.assertNotIn(marker, repr(result))
+                    self.assertNotIn(marker, repr(normalized))
 
     def test_automation_lab_valid_empty_result_returns_no_candidates(self):
         """Let the import service own the safe no-review failure mapping."""
@@ -191,8 +213,20 @@ class ImportAdapterTests(unittest.TestCase):
         )
         self.assertEqual(result.title, "Test Cafe")
         self.assertEqual(result.source_key, "ChIJFixturePlace")
+        normalized = normalize_provider_result(result, 10)
+        self.assertEqual(len(normalized.reviews), 3)
+        self.assertEqual([review.rating for review in normalized.reviews], [5, 3, 1])
+        self.assertEqual(
+            [(review.text, review.date) for review in normalized.reviews],
+            [
+                ("Friendly staff and excellent coffee during a busy morning.", "2026-07-20"),
+                ("The visit was acceptable, but service speed varied considerably.", "2026-07-18"),
+                ("The order was incorrect and the issue was not resolved.", "2026-07-16"),
+            ],
+        )
         for marker in ("discard-reviewer-marker", "discard-owner-marker", "discard-image"):
             self.assertNotIn(marker, repr(result))
+            self.assertNotIn(marker, repr(normalized))
 
     def test_missing_credentials_stop_before_http(self):
         """Require only the selected backend credential before network work."""
