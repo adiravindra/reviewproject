@@ -9,12 +9,22 @@
     "name": "discard-reviewer-marker",
     "reviewerUrl": "https://example.invalid/discard-profile",
     "responseFromOwnerText": "discard-owner-marker",
-    "reviewImageUrls": ["https://example.invalid/discard-image"]
+    "reviewImageUrls": [
+      "https://example.invalid/discard-image"
+    ]
   },
   {
-    "text": "Comfortable seating and quick service, but parking is limited.",
-    "stars": 4,
+    "text": "The visit was acceptable, but service speed varied considerably.",
+    "stars": 3,
     "publishedAtDate": "2026-07-18T09:30:00.000Z",
+    "title": "Test Cafe",
+    "placeId": "ChIJFixturePlace",
+    "url": "https://www.google.com/maps/place/Test+Cafe"
+  },
+  {
+    "text": "The order was incorrect and the issue was not resolved.",
+    "stars": 1,
+    "publishedAtDate": "2026-07-16T08:15:00.000Z",
     "title": "Test Cafe",
     "placeId": "ChIJFixturePlace",
     "url": "https://www.google.com/maps/place/Test+Cafe"

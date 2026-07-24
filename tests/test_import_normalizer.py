@@ -108,6 +108,53 @@ class ImportNormalizerTests(unittest.TestCase):
         self.assertIsNone(normalized.reviews[1].rating)
         self.assertIsNone(normalized.reviews[2].rating)
 
+    def test_preserves_provider_order_across_positive_neutral_and_negative_ratings(self):
+        """Keep natural provider order without manufacturing sentiment balance."""
+
+        result = ProviderImportResult(
+            title="Mixed source",
+            source_url="https://example.test/mixed",
+            source_key="mixed-1",
+            reviews=(
+                ProviderReviewCandidate(
+                    "Positive",
+                    "This review describes a consistently excellent experience.",
+                    5,
+                    "2026-07-20",
+                ),
+                ProviderReviewCandidate(
+                    "Neutral",
+                    "This review describes an adequate but uneven experience.",
+                    3,
+                    "2026-07-19",
+                ),
+                ProviderReviewCandidate(
+                    "Negative",
+                    "This review describes a serious and repeatable failure.",
+                    1,
+                    "2026-07-18",
+                ),
+            ),
+        )
+
+        normalized = normalize_provider_result(result, limit=10)
+
+        self.assertEqual(
+            [review.rating for review in normalized.reviews],
+            [5, 3, 1],
+        )
+        self.assertEqual(
+            [
+                review.text.startswith(expected)
+                for review, expected in zip(
+                    normalized.reviews,
+                    ("Positive", "Neutral", "Negative"),
+                    strict=True,
+                )
+            ],
+            [True, True, True],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

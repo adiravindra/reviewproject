@@ -177,6 +177,18 @@ class ImportAdapterTests(unittest.TestCase):
                 "language": "en",
             },
         )
+        self.assertTrue(
+            {
+                "filterByStars",
+                "starRatings",
+                "filterByRating",
+                "minimumRating",
+            }.isdisjoint(kwargs["json"])
+        )
+        self.assertEqual(
+            [review.rating for review in result.reviews],
+            [5, 3, 1],
+        )
         self.assertEqual(result.title, "Test Cafe")
         self.assertEqual(result.source_key, "ChIJFixturePlace")
         for marker in ("discard-reviewer-marker", "discard-owner-marker", "discard-image"):
