@@ -28,6 +28,8 @@ use fixtures and mocks for all automated tests.
   cache, refresh, and bundled demo flows.
 - Continue displaying requested and actual retrieved counts because providers
   can return fewer written reviews than requested.
+- Preserve the existing single-call Groq boundary by analyzing at most the first
+  40 imported reviews.
 - Require no Amazon or Google credentials, cookies, browser state, or session
   tokens.
 
@@ -40,7 +42,8 @@ use fixtures and mocks for all automated tests.
   owner responses, or raw provider responses.
 - Supporting Amazon marketplaces other than `amazon.com` in this milestone.
 - Integrating an Amazon open dataset.
-- Changing the Groq analysis schema, report history model, or bundled demo.
+- Batching or synthesizing multiple Groq calls to analyze more than 40 reviews.
+- Changing the Groq insight schema, report history model, or bundled demo.
 
 ## User experience
 
@@ -65,6 +68,14 @@ After import, the dashboard will continue showing:
 A request for 50 or 100 reviews is a ceiling, not a promise. When Amazon exposes
 fewer anonymous written reviews, the import succeeds with the smaller actual
 count as long as at least two usable reviews remain.
+
+The pre-analysis evidence view will show every imported review, up to 100. When
+the collection contains more than 40 reviews, **Analyze with Groq** will submit
+the first 40 reviews in provider order and clearly disclose `40 of N reviews
+analyzed`. The resulting report and saved history entry will contain those 40
+analyzed reviews, while the unmodified imported collection remains available
+until the report replaces the evidence workspace. Collections of 40 or fewer
+reviews retain the current behavior.
 
 ## Provider architecture
 
@@ -153,6 +164,22 @@ No database migration is required. Historical reports attributed to Outscraper
 remain readable and keep their original provenance. New Amazon reports will use
 provider label `Apify (Axesso)`.
 
+The import request and collection contracts will accept up to 100 reviews. The
+analysis boundary will continue accepting at most 40 reviews; the dashboard will
+construct the analysis payload from the first 40 imported reviews without
+changing the imported source metadata. Report metrics therefore describe the
+analyzed subset, while source provenance continues to describe the original
+import and its actual retrieved count.
+
+Today the analysis route converts `AnalysisRequest` back into a
+`CollectionResult`, whose invariant requires `retrieved_count` to equal the
+number of reviews in the collection. That conversion cannot represent a
+deliberate analysis subset. The analysis route and `run_analysis` service will
+therefore pass the validated `AnalysisRequest` directly. This is an internal
+interface adjustment only: the HTTP request and response shapes stay the same,
+the import collection retains its strict count invariant, and no history
+migration is required.
+
 ## Failure handling
 
 Existing application-owned errors remain in use:
@@ -229,6 +256,8 @@ analysis, and history layers should not require provider-specific changes.
 - Retain compatibility for historical `Outscraper` report provenance.
 - Define and use one shared `10, 20, 50, 100` limit set.
 - Change the dashboard URL label and placeholder to generic wording.
+- Cap the dashboard's Groq analysis payload at the first 40 reviews and disclose
+  the analyzed/imported counts.
 - Update README, architecture, status, environment example, and provider usage
   estimates.
 - Update adapter, service, API, dashboard, documentation, and compatibility
@@ -251,6 +280,11 @@ Tests will verify:
   response decoding;
 - reviewer, profile, image, variation, and raw-response fields are discarded;
 - responses are normalized, deduplicated, and capped at the selected limit;
+- imports with 50 or 100 reviews validate and render all imported evidence;
+- analysis payloads contain all reviews when the import has 40 or fewer and
+  exactly the first 40 when the import has more than 40;
+- the dashboard discloses `40 of N reviews analyzed`, and report metrics and
+  history contain only the analyzed subset;
 - provider failures map to existing safe application errors;
 - caching prevents repeated Actor runs and explicit refresh performs one run;
 - old history rows with `provider="Outscraper"` remain readable;
