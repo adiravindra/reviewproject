@@ -3,8 +3,8 @@
 from backend.app.analyzer import analyze_reviews
 from backend.app.credentials import validate_groq_credentials
 from backend.app.models import (
+    AnalysisRequest,
     AnalysisResponse,
-    CollectionResult,
     Metrics,
     Review,
     ReviewSentiment,
@@ -34,7 +34,7 @@ def calculate_metrics(reviews: list[Review], sentiments: list[ReviewSentiment]) 
 
 
 def run_analysis(
-    collection: CollectionResult,
+    request: AnalysisRequest,
     *,
     credential_validator=validate_groq_credentials,
     analyzer=analyze_reviews,
@@ -44,11 +44,11 @@ def run_analysis(
     # Credential preflight is deliberately first: invalid credentials must stop
     # before any generative provider invocation or deterministic metric work.
     credential_validator()
-    insights = analyzer(collection.reviews)
-    metrics = calculate_metrics(collection.reviews, insights.review_sentiments)
+    insights = analyzer(request.reviews)
+    metrics = calculate_metrics(request.reviews, insights.review_sentiments)
     return AnalysisResponse(
-        source=collection.source,
+        source=request.source,
         metrics=metrics,
         insights=insights,
-        reviews=collection.reviews,
+        reviews=request.reviews,
     )

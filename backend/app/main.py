@@ -266,7 +266,7 @@ def create_app(
         """Analyze submitted evidence once, save it once, and return its history ID."""
 
         try:
-            report = analysis_service(request.to_collection())
+            report = analysis_service(request)
         except CollectionError as error:
             raise _collection_http_error(error) from None
         except AnalysisError as error:

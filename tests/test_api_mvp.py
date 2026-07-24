@@ -12,6 +12,7 @@ from backend.app.errors import AnalysisError
 from backend.app.main import create_app
 from backend.app.service import run_analysis
 from backend.app.models import (
+    AnalysisRequest,
     AnalysisResponse,
     CollectionResult,
     HistoryItem,
@@ -86,6 +87,71 @@ def sample_response() -> AnalysisResponse:
                     {"review_id": "r1", "sentiment": "positive"},
                     {"review_id": "r2", "sentiment": "positive"},
                     {"review_id": "r3", "sentiment": "negative"},
+                ],
+            },
+        }
+    )
+
+
+def provider_subset_payload(review_count=40) -> dict:
+    """Build an analyzed subset whose source preserves a 100-review import."""
+
+    return {
+        "source": {
+            "url": "https://www.amazon.com/dp/B000000000",
+            "title": "Fixture product",
+            "extractor": "provider_api",
+            "is_demo": False,
+            "platform": "amazon",
+            "provider": "Apify (Axesso)",
+            "requested_count": 100,
+            "retrieved_count": 100,
+            "retrieved_at": "2026-07-23T12:00:00Z",
+            "cache_status": "miss",
+        },
+        "reviews": [
+            {
+                "id": f"r{index + 1}",
+                "text": f"Imported review number {index + 1} has useful product evidence.",
+                "rating": 5,
+            }
+            for index in range(review_count)
+        ],
+    }
+
+
+def provider_subset_response() -> AnalysisResponse:
+    """Return a valid report containing only the 40 analyzed reviews."""
+
+    payload = provider_subset_payload()
+    return AnalysisResponse.model_validate(
+        {
+            **payload,
+            "metrics": {
+                "review_count": 40,
+                "rated_count": 40,
+                "average_rating": 5.0,
+                "positive_percentage": 100.0,
+                "sentiment_counts": {"positive": 40, "neutral": 0, "negative": 0},
+                "rating_distribution": {"1": 0, "2": 0, "3": 0, "4": 0, "5": 40},
+            },
+            "insights": {
+                "summary": "The analyzed subset is consistently positive.",
+                "overall_sentiment": "positive",
+                "themes": [
+                    {
+                        "name": "Consistent experience",
+                        "description": "The analyzed reviews consistently describe useful product evidence.",
+                        "mentions": 40,
+                        "sentiment": "positive",
+                    }
+                ],
+                "strengths": ["Consistent results"],
+                "weaknesses": [],
+                "actions": [],
+                "review_sentiments": [
+                    {"review_id": f"r{index + 1}", "sentiment": "positive"}
+                    for index in range(40)
                 ],
             },
         }
@@ -205,7 +271,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
         service.assert_not_called()
 
-    def test_analyze_passes_exact_collection_saves_once_and_returns_history_id(self):
+    def test_analyze_passes_exact_request_saves_once_and_returns_history_id(self):
         """Analyze only submitted evidence, persist it once, then expose its local ID."""
 
         service = Mock(return_value=sample_response())
@@ -215,9 +281,50 @@ class ApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         submitted = service.call_args.args[0]
-        self.assertEqual(submitted, sample_collection())
+        self.assertEqual(
+            submitted,
+            AnalysisRequest.model_validate(sample_collection_payload()),
+        )
         self.assertEqual(history.saved_reports, [sample_response()])
         self.assertEqual(response.json()["history_id"], 13)
+
+    def test_analyze_preserves_import_provenance_for_first_forty_subset(self):
+        """Pass 40-of-100 evidence directly and save the exact bounded report once."""
+
+        report = provider_subset_response()
+        service = Mock(return_value=report)
+        history = FakeHistoryStore(saved_id=21)
+
+        response = TestClient(
+            create_app(analysis_service=service, history_store=history)
+        ).post("/api/analyze", json=provider_subset_payload())
+
+        self.assertEqual(response.status_code, 200)
+        submitted = service.call_args.args[0]
+        self.assertIsInstance(submitted, AnalysisRequest)
+        self.assertEqual(submitted, AnalysisRequest.model_validate(provider_subset_payload()))
+        self.assertEqual(submitted.source.retrieved_count, 100)
+        self.assertEqual(len(submitted.reviews), 40)
+        self.assertEqual(history.saved_reports, [report])
+        self.assertEqual(len(history.saved_reports[0].reviews), 40)
+        self.assertEqual(response.json()["source"]["retrieved_count"], 100)
+        self.assertEqual(response.json()["metrics"]["review_count"], 40)
+        self.assertEqual(len(response.json()["reviews"]), 40)
+        self.assertEqual(response.json()["history_id"], 21)
+
+    def test_analyze_rejects_forty_one_reviews_before_service_or_history(self):
+        """Keep oversized analysis payloads away from Groq and persistence."""
+
+        service = Mock(return_value=provider_subset_response())
+        history = FakeHistoryStore()
+
+        response = TestClient(
+            create_app(analysis_service=service, history_store=history)
+        ).post("/api/analyze", json=provider_subset_payload(review_count=41))
+
+        self.assertEqual(response.status_code, 422)
+        service.assert_not_called()
+        self.assertEqual(history.saved_reports, [])
 
     def test_analysis_failure_does_not_save_history(self):
         """Never persist a report when analysis itself did not succeed."""

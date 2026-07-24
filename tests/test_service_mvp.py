@@ -5,7 +5,14 @@ import unittest
 from unittest.mock import Mock, patch
 
 from backend.app.errors import AnalysisError
-from backend.app.models import AgentInsights, CollectionResult, Review, ReviewSentiment, SourceInfo
+from backend.app.models import (
+    AgentInsights,
+    AnalysisRequest,
+    CollectionResult,
+    Review,
+    ReviewSentiment,
+    SourceInfo,
+)
 from backend.app.service import calculate_metrics, run_analysis
 
 
@@ -41,6 +48,13 @@ def sample_collection():
         ),
         reviews=sample_reviews(),
     )
+
+
+def sample_analysis_request():
+    """Build the validated request consumed by the analysis service."""
+
+    collection = sample_collection()
+    return AnalysisRequest(source=collection.source, reviews=collection.reviews)
 
 
 def sample_insights():
@@ -99,7 +113,7 @@ class ServiceTests(unittest.TestCase):
         """Validate Groq once before analyzing exactly the submitted evidence."""
 
         events = []
-        collection = sample_collection()
+        request = sample_analysis_request()
         credential_validator = Mock(side_effect=lambda: events.append("validate"))
         analyzer = Mock(
             side_effect=lambda reviews: (
@@ -108,17 +122,76 @@ class ServiceTests(unittest.TestCase):
             )[1]
         )
         result = run_analysis(
-            collection,
+            request,
             credential_validator=credential_validator,
             analyzer=analyzer,
         )
         credential_validator.assert_called_once_with()
-        analyzer.assert_called_once_with(collection.reviews)
+        analyzer.assert_called_once_with(request.reviews)
         self.assertEqual(events, ["validate", "analyze"])
-        self.assertIs(result.source, collection.source)
+        self.assertIs(result.source, request.source)
         self.assertEqual(result.metrics.review_count, 3)
-        self.assertEqual(result.reviews, collection.reviews)
+        self.assertEqual(result.reviews, request.reviews)
         self.assertIsNone(result.history_id)
+
+    def test_analysis_subset_preserves_one_hundred_review_source_provenance(self):
+        """Analyze exactly 40 reviews while retaining the actual imported count."""
+
+        reviews = [
+            Review(
+                id=f"r{index + 1}",
+                text=f"Imported review number {index + 1} has useful evidence.",
+                rating=5,
+            )
+            for index in range(40)
+        ]
+        request = AnalysisRequest(
+            source=SourceInfo(
+                url="https://www.amazon.com/dp/B000000000",
+                title="Fixture product",
+                extractor="provider_api",
+                is_demo=False,
+                platform="amazon",
+                provider="Apify (Axesso)",
+                requested_count=100,
+                retrieved_count=100,
+                retrieved_at="2026-07-23T12:00:00Z",
+                cache_status="miss",
+            ),
+            reviews=reviews,
+        )
+        analyzer = Mock(
+            return_value=AgentInsights(
+                summary="The analyzed subset is consistently positive.",
+                overall_sentiment="positive",
+                themes=[
+                    {
+                        "name": "Consistency",
+                        "description": "The submitted reviews consistently describe useful evidence.",
+                        "mentions": 40,
+                        "sentiment": "positive",
+                    }
+                ],
+                strengths=["Consistent results"],
+                weaknesses=[],
+                actions=[],
+                review_sentiments=[
+                    ReviewSentiment(review_id=review.id, sentiment="positive")
+                    for review in reviews
+                ],
+            )
+        )
+
+        result = run_analysis(
+            request,
+            credential_validator=lambda: None,
+            analyzer=analyzer,
+        )
+
+        analyzer.assert_called_once_with(reviews)
+        self.assertEqual(result.source.retrieved_count, 100)
+        self.assertEqual(result.metrics.review_count, 40)
+        self.assertEqual(len(result.reviews), 40)
 
     def test_credential_failure_stops_analyzer_and_metrics(self):
         """Stop all downstream analysis work when Groq preflight rejects a key."""
@@ -131,7 +204,7 @@ class ServiceTests(unittest.TestCase):
         analyzer = Mock()
         with self.assertRaises(AnalysisError):
             run_analysis(
-                sample_collection(),
+                sample_analysis_request(),
                 credential_validator=validate,
                 analyzer=analyzer,
             )
@@ -149,7 +222,7 @@ class ServiceTests(unittest.TestCase):
             ):
                 with self.assertRaises(AnalysisError) as raised:
                     run_analysis(
-                        sample_collection(),
+                        sample_analysis_request(),
                         analyzer=analyzer,
                     )
 
@@ -169,12 +242,13 @@ class ServiceTests(unittest.TestCase):
             ),
             reviews=sample_reviews(),
         )
+        request = AnalysisRequest(source=collection.source, reviews=collection.reviews)
         result = run_analysis(
-            collection,
+            request,
             credential_validator=lambda: None,
             analyzer=lambda reviews: sample_insights(),
         )
-        self.assertIs(result.source, collection.source)
+        self.assertIs(result.source, request.source)
         self.assertIsNone(result.source.url)
         self.assertEqual(result.source.extractor, "demo")
         self.assertTrue(result.source.is_demo)
