@@ -25,9 +25,17 @@ class ImportDocumentationTests(unittest.TestCase):
         for required in (
             "Apify account",
             "Apify API token",
-            "axesso_data/amazon-reviews-scraper",
+            "automation-lab/amazon-reviews-scraper",
             "compass/google-maps-reviews-scraper",
-            "$5",
+            "$0.01",
+            "$2.00 per 1,000",
+            "$0.03",
+            "$0.05",
+            "$0.11",
+            "$0.21",
+            'sort: "helpful"',
+            'reviewsSort: "mostRelevant"',
+            "no star-rating filter",
             "10, 20, 50, or 100",
             "Source URL",
             "Paste an Amazon product or Google Maps place URL",
@@ -38,17 +46,16 @@ class ImportDocumentationTests(unittest.TestCase):
             "unofficial scraping services",
             "cookies or session tokens",
             "fixtures and fakes",
-            "$0.009",
-            "$0.018",
-            "$0.045",
-            "$0.09",
             "pricing and availability can change",
             "provider-side retention",
+            "Apify (Axesso)",
+            "Outscraper",
             "Amazon Conditions of Use",
             "Google Maps Additional Terms",
         ):
             with self.subTest(required=required):
                 self.assertIn(required, readme)
+        self.assertNotIn("axesso_data/amazon-reviews-scraper", readme)
         self.assertNotIn("OUTSCRAPER_API_KEY", readme)
         self.assertNotIn("Outscraper account", readme)
 
@@ -64,10 +71,14 @@ class ImportDocumentationTests(unittest.TestCase):
             "/api/import",
             "review_import_cache.db",
             "APIFY_API_TOKEN",
-            "axesso_data/amazon-reviews-scraper",
+            "automation-lab/amazon-reviews-scraper",
             "compass/google-maps-reviews-scraper",
+            "apify_automation_lab_amazon",
             "10/20/50/100",
             "Source URL",
+            'sort: "helpful"',
+            'reviewsSort: "mostRelevant"',
+            "provider order",
             "first 40",
             "personalData: false",
             "provider-side retention",

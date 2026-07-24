@@ -134,12 +134,21 @@ Credentials, authorization headers, raw AI responses, upstream response bodies, 
 
 ## External setup for live imports
 
-Automated tests and bundled demo use require no provider account. Before the first live request, create one Apify account, obtain an Apify API token from **Settings / API & Integrations**, and set backend-only `APIFY_API_TOKEN`. Apify's current free plan is $0, needs no payment card, includes $5 of non-rollover monthly usage, and hard-stops when exhausted. Check current [Apify pricing](https://apify.com/pricing), and if intentionally using a paid plan, configure the lowest practical platform spending limit first.
+Automated tests and bundled demo use require no provider account. Before the first live request, create one Apify account, obtain an Apify API token from **Settings / API & Integrations**, and set backend-only `APIFY_API_TOKEN`. Check current [Apify pricing](https://apify.com/pricing), Actor availability, and, if intentionally using a paid plan, configure the lowest practical platform spending limit first.
 
-- **Amazon:** ReviewInsight calls public Actor [`axesso_data/amazon-reviews-scraper`](https://apify.com/axesso_data/amazon-reviews-scraper) for one validated `amazon.com` ASIN.
+- **Amazon:** ReviewInsight calls public Actor
+  [`automation-lab/amazon-reviews-scraper`](https://apify.com/automation-lab/amazon-reviews-scraper)
+  for one validated `amazon.com` ASIN. It requests `sort: "helpful"` and does
+  not send a star-rating, keyword, or positive-only filter. There is no star-rating filter.
 - **Google Maps:** ReviewInsight calls public Actor [`compass/google-maps-reviews-scraper`](https://apify.com/compass/google-maps-reviews-scraper) for one place URL with most-relevant ordering, Google-only origin, English output, and `personalData: false`.
 - **Actor setup:** no Actor copy, task, schedule, build, webhook, custom configuration, or Actor ID environment variable is required.
 - **Analysis:** GROQ_API_KEY remains necessary only after import when **Analyze with Groq** is selected.
+
+Google Maps keeps `reviewsSort: "mostRelevant"` and sends no rating filter.
+Both providers return their own ranked order; ReviewInsight preserves that
+order and every usable review up to the selected limit. It does not rearrange
+or discard usable reviews to manufacture sentiment balance, so a real source
+can still be uniform or contain fewer reviews than requested.
 
 Do not perform a manual live smoke request until the account, token, Actor availability, free-plan/billing/spending-limit configuration, and environment value have been confirmed. The application never asks users for Amazon or Google account credentials, browser cookies or session tokens.
 
@@ -148,22 +157,22 @@ Do not perform a manual live smoke request until the account, token, Actor avail
 Provider results are cached locally for 30 days. Repeating the same import uses normalized cached evidence without contacting the provider. **Refresh from source** is the only way to bypass a live entry and warns that it may consume free-tier usage. Page loads, Streamlit reruns, history operations, and analysis never refresh provider data. A failed refresh preserves the displayed evidence and prior cache entry.
 
 - Both separate, replaceable adapters support 10, 20, 50, or 100 reviews and make one synchronous Actor request per cache miss or explicit refresh. A selected limit is a ceiling: Amazon can return fewer usable written reviews, and source provenance displays the actual count.
-- Axesso currently advertises $0.90 per 1,000 Amazon reviews. Approximate maximum review-event costs are $0.009, $0.018, $0.045, and $0.09 for limits 10, 20, 50, and 100. Compass uses separate Actor pricing.
+- Automation Lab's Free-plan Console pricing observed on July 23, 2026 is `$0.01` per run start plus `$2.00 per 1,000` reviews (`$0.002` per review), with platform usage included. Approximate maximum event costs for imports of 10, 20, 50, and 100 reviews are `$0.03`, `$0.05`, `$0.11`, and `$0.21`. Provider pricing and availability can change.
 - There is no application-side follow-up pagination, background import, schedule, webhook, automatic retry, or monthly quota ledger.
 
-These are planning estimates, not billing guarantees. Provider pricing and availability can change.
+These are planning estimates, not billing guarantees.
 
 ## Unofficial providers, terms, privacy, and retention
 
 Both Apify Actors are unofficial scraping services. Their availability does not grant ReviewInsight or its users rights to copy, analyze, retain, redistribute, or commercialize source content. Users are responsible for confirming their use and retention are permitted. Review the [Amazon Conditions of Use](https://www.amazon.com/gp/help/customer/display.html?nodeId=GLSBYFE9MGKKQXXM) and [Google Maps Additional Terms](https://maps.google.com/help/terms_maps/?refresh=1). This documentation does not claim blanket legal permission or endorsement by Amazon or Google.
 
-ReviewInsight retains the original public URL, provider label, requested count, actual count, and normalized evidence. It discards provider reviewer names, profiles, avatars, media, variations, helpful-vote data, owner responses, provider IDs, and raw response bodies. Axesso may include public personal fields transiently and does not expose the Google Actor's `personalData: false` control; ReviewInsight discards those fields but cannot prevent provider-side processing or storage. Review text can still contain personal information and is sent to Groq only after explicit analysis. The normalized cache expires after 30 days, while successful report history retains evidence until the operator deletes the local history database. Historical saved reports labeled `Outscraper` remain readable with their original provenance.
+ReviewInsight retains the original public URL, provider label, requested count, actual count, and normalized evidence. It discards provider reviewer names, profiles, avatars, media, variations, helpful-vote data, owner responses, provider IDs, and raw response bodies. Automation Lab may include public personal fields transiently; ReviewInsight discards those fields but cannot prevent provider-side processing or storage. Review text can still contain personal information and is sent to Groq only after explicit analysis. The normalized cache expires after 30 days, while successful report history retains evidence until the operator deletes the local history database. Historical saved reports labeled `Apify (Axesso)` or `Outscraper` remain readable with their original provenance.
 
 Apify may retain Actor run and dataset data under its provider-side retention policy. Version one does not programmatically delete those runs or datasets; operators may remove them manually in Apify Console. This proof of concept is for small local evaluation, not bulk redistribution.
 
 ## Test and validate
 
-Automated tests use saved provider fixtures and fakes, so they do not spend Apify, Axesso, Compass, Amazon, Google Maps, or Groq quota and do not depend on external review pages:
+Automated tests use saved provider fixtures and fakes, so they do not spend Apify, Automation Lab, Compass, Amazon, Google Maps, or Groq quota and do not depend on external review pages:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v

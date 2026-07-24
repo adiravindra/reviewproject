@@ -1,17 +1,17 @@
 # Project Status
 
 **Date:** July 23, 2026
-**Status:** Amazon and Google Maps review imports use fixture-tested Apify adapters with shared limits; optional manual live provider smoke testing remains pending explicit operator approval.
+**Status:** Amazon and Google Maps review imports use fixture-tested Apify adapters with shared limits; optional manual live provider smoke verification still requires explicit user approval.
 
 ## Current feature inventory
 
-- `GET /api/import/options` supplies provider-neutral labels and shared 10/20/50/100 limits. The dashboard uses one **Source URL** field. `POST /api/import` routes Amazon to `axesso_data/amazon-reviews-scraper` and Google Maps to `compass/google-maps-reviews-scraper`.
+- `GET /api/import/options` supplies provider-neutral labels and shared 10/20/50/100 limits. The dashboard uses one **Source URL** field. Amazon imports use `automation-lab/amazon-reviews-scraper` through the existing replaceable adapter boundary. Amazon requests helpful reviews without a sentiment filter; Google Maps requests most-relevant reviews without a rating filter. Mixed fixture coverage proves 5-, 3-, and 1-star reviews remain in provider order.
 - The sole import credential is backend `APIFY_API_TOKEN`; it is read only on a cache miss or explicit refresh. The app needs no Amazon or Google account credentials, cookies, browser state, or session tokens.
-- Google input sets `personalData: false`. Axesso has no equivalent control, so it may return public reviewer fields transiently; the adapter discards identities, profiles, media, variations, helpful-vote data, provider IDs, and raw responses.
+- Google input sets `personalData: false`; Automation Lab may return public reviewer fields transiently, so the adapter discards identities, profiles, media, variations, helpful-vote data, provider IDs, and raw responses.
 - Normalized evidence is isolated in `data/review_import_cache.db` for 30 days. Explicit **Refresh from source** is the only cache bypass.
 - Imports have no application-side follow-up pagination, background work, polling, schedules, webhooks, or automatic retries. One miss/refresh makes at most one provider request. No Actor copy, task, schedule, webhook, build, custom configuration, or Actor ID environment variable is required.
 - Apify provider-side retention remains an operator concern; version one does not automatically delete Actor runs or datasets.
-- Saved provider fixture files and fake HTTP sessions cover automated import tests, so they spend no provider or Groq quota.
+- All automated verification is fixture-only: saved provider fixture files and fake HTTP sessions cover automated import tests, so they spend no provider or Groq quota. Live provider smoke verification still requires explicit user approval.
 - All imported evidence remains visible up to 100 reviews. Groq analyzes only the first 40 in provider order; larger reports disclose `40 of N reviews analyzed`, while source provenance retains the actual imported count.
 
 - `run_app.py` remains the only supported complete-application launcher. It loads the repository-root `.env` without overriding existing shell or system values, starts FastAPI on `127.0.0.1:8000`, and launches Streamlit on `127.0.0.1:8501` only after the backend is healthy.
