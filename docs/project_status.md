@@ -1,17 +1,18 @@
 # Project Status
 
-**Date:** July 22, 2026
-**Status:** Amazon and Google Maps review imports are implemented behind fixture-tested provider adapters; manual live provider smoke testing remains pending operator credentials and plan confirmation.
+**Date:** July 23, 2026
+**Status:** Amazon and Google Maps review imports use fixture-tested Apify adapters with shared limits; optional manual live provider smoke testing remains pending explicit operator approval.
 
 ## Current feature inventory
 
-- `GET /api/import/options` supplies provider-neutral labels and low limits. `POST /api/import` routes Amazon to Outscraper and Google Maps to Apify Actor `compass/google-maps-reviews-scraper`.
-- Backend credentials are `OUTSCRAPER_API_KEY` and `APIFY_API_TOKEN`; they are read only on a cache miss or explicit refresh.
-- Apify input sets `personalData: false`. Adapters retain no reviewer identity, avatar, profile, media, owner response, raw response, cookie, or session token.
+- `GET /api/import/options` supplies provider-neutral labels and shared 10/20/50/100 limits. The dashboard uses one **Source URL** field. `POST /api/import` routes Amazon to `axesso_data/amazon-reviews-scraper` and Google Maps to `compass/google-maps-reviews-scraper`.
+- The sole import credential is backend `APIFY_API_TOKEN`; it is read only on a cache miss or explicit refresh. The app needs no Amazon or Google account credentials, cookies, browser state, or session tokens.
+- Google input sets `personalData: false`. Axesso has no equivalent control, so it may return public reviewer fields transiently; the adapter discards identities, profiles, media, variations, helpful-vote data, provider IDs, and raw responses.
 - Normalized evidence is isolated in `data/review_import_cache.db` for 30 days. Explicit **Refresh from source** is the only cache bypass.
-- Imports have no pagination, background work, polling, schedules, webhooks, or automatic retries. One miss/refresh makes at most one provider request.
+- Imports have no application-side follow-up pagination, background work, polling, schedules, webhooks, or automatic retries. One miss/refresh makes at most one provider request. No Actor copy, task, schedule, webhook, build, custom configuration, or Actor ID environment variable is required.
 - Apify provider-side retention remains an operator concern; version one does not automatically delete Actor runs or datasets.
 - Saved provider fixture files and fake HTTP sessions cover automated import tests, so they spend no provider or Groq quota.
+- All imported evidence remains visible up to 100 reviews. Groq analyzes only the first 40 in provider order; larger reports disclose `40 of N reviews analyzed`, while source provenance retains the actual imported count.
 
 - `run_app.py` remains the only supported complete-application launcher. It loads the repository-root `.env` without overriding existing shell or system values, starts FastAPI on `127.0.0.1:8000`, and launches Streamlit on `127.0.0.1:8501` only after the backend is healthy.
 - One shared 30-second deadline begins when FastAPI launches and remains active through Streamlit startup without resetting. The browser opens only after FastAPI `GET /health` returns HTTP 200 with exactly `{"status":"ok"}` and the subsequently launched Streamlit `GET /_stcore/health` returns HTTP 200. Timeout or child exit returns a failure and cleans up whichever children were started.
@@ -32,6 +33,7 @@ The active non-secret settings are:
 REVIEWINSIGHT_API_URL=http://127.0.0.1:8000
 GROQ_API_KEY=
 REVIEWINSIGHT_GROQ_MODEL=llama-3.3-70b-versatile
+APIFY_API_TOKEN=
 ```
 
 `GROQ_API_KEY` is required only when analysis begins. It is never entered through the UI. The model override is optional; the default remains `llama-3.3-70b-versatile`.

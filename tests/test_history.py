@@ -186,8 +186,8 @@ class HistoryStoreTests(unittest.TestCase):
         self.assertEqual(items[0].overall_sentiment, "mixed")
         self.assertEqual(items[1].source_url, "https://example.test/products/widget")
 
-    def test_provider_reports_round_trip_with_stable_summary_provenance(self):
-        """Persist Amazon provider labels in both report JSON and summaries."""
+    def test_historical_outscraper_reports_round_trip_with_stable_provenance(self):
+        """Keep old Outscraper labels readable without an active adapter."""
 
         run_id = self.store.save(
             make_report(

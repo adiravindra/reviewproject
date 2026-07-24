@@ -55,15 +55,15 @@ The opening workspace keeps live extraction and explicit demo collection side by
 
 ## Provider import boundary
 
-The dashboard first loads choices from `GET /api/import/options`, which does not check credentials or contact a provider. One explicit `POST /api/import` selects a replaceable adapter through the registry: Amazon uses Outscraper with limits 5/10/12, while Google Maps uses Apify Actor `compass/google-maps-reviews-scraper` with limits 5/10/20.
+The dashboard first loads choices from `GET /api/import/options`, which does not check credentials or contact a provider. The form uses one generic **Source URL** field. One explicit `POST /api/import` selects a replaceable adapter through the registry: Amazon uses Apify Actor `axesso_data/amazon-reviews-scraper`, while Google Maps uses `compass/google-maps-reviews-scraper`. Both expose the shared 10/20/50/100 limits from the provider-neutral contract.
 
 `ReviewImportService` validates the selected URL, checks `data/review_import_cache.db`, invokes one adapter only on a miss or explicit refresh, normalizes the response, and returns the existing collection contract with source provenance. The cache retains normalized evidence for 30 days and isolates platform, provider, normalization contract, source, limit, and ordering.
 
-Adapters read only the selected backend credential: `OUTSCRAPER_API_KEY` or `APIFY_API_TOKEN`. The Apify request sets `personalData: false`, Google-only review origin, and most-relevant ordering. Both adapters discard reviewer identities, profiles, avatars, media, owner responses, and raw provider responses. They never accept source-site credentials, cookies, browser state, or session tokens.
+Both adapters read only backend `APIFY_API_TOKEN`. Google input sets `personalData: false`, Google-only review origin, and most-relevant ordering. Axesso does not expose the same personal-data control and may return public reviewer fields transiently; the adapter decodes only product title, review title, review text, rating, and date. Both adapters discard reviewer identities, profiles, avatars, media, variations, helpful-vote data, owner responses, provider IDs, and raw responses. They require no Amazon or Google account credentials, cookies, browser state, or session tokens.
 
-Only **Refresh from source** bypasses a live cache entry. There are no automatic retries, background refreshes, pagination, polling, schedules, or webhooks. A failed refresh preserves the prior cache entry and displayed evidence. Import never invokes Groq or history.
+Only **Refresh from source** bypasses a live cache entry. There are no automatic retries, application-side follow-up pagination, background refreshes, polling, schedules, or webhooks. A failed refresh preserves the prior cache entry and displayed evidence. Import never invokes Groq or history. No Actor copy, task, schedule, webhook, build, custom configuration, or Actor ID environment variable is required.
 
-Outscraper and Apify are unofficial scraping services. Apify provider-side retention may apply to Actor runs and datasets; version one does not automatically delete them. Report history intentionally remains a longer-lived operator-managed snapshot.
+Both Apify Actors are unofficial scraping services. Apify provider-side retention may apply to Actor runs and datasets; version one does not automatically delete them. The 30-day normalized cache and report history are separate local retention surfaces. Historical report rows with provider `Outscraper` remain readable, but no active adapter or setup credential uses that provider.
 
 The existing `POST /api/collect` static JSON-LD/HTML endpoint remains available for compatibility but is not used by the Amazon/Google source choices.
 
@@ -73,7 +73,7 @@ The existing `POST /api/collect` static JSON-LD/HTML endpoint remains available 
 
 Before analysis, FastAPI calls Groq's non-generative model-list endpoint with a bearer authorization header. A blank key maps to `missing_api_key`; rejected credentials map to `invalid_api_key`; transport, rate-limit, or other validation failures map to `groq_unavailable`. No collection or model invocation starts after validation fails.
 
-`backend.app.analyzer.build_model()` uses `langchain_groq.ChatGroq` only. The default model is `llama-3.3-70b-versatile`; `REVIEWINSIGHT_GROQ_MODEL` is an optional local override. The agent is invoked once with normalized review ID, text, rating, and date values and must return a schema-validated response with one sentiment for every review ID.
+`backend.app.analyzer.build_model()` uses `langchain_groq.ChatGroq` only. The default model is `llama-3.3-70b-versatile`; `REVIEWINSIGHT_GROQ_MODEL` is an optional local override. Imports display up to 100 reviews, but the dashboard sends only the first 40 in provider order to one Groq call. The agent receives normalized review ID, text, rating, and date values and must return a schema-validated response with one sentiment for every submitted review ID. Source provenance keeps the actual imported count, while report metrics and saved evidence describe the analyzed subset.
 
 Only application-owned codes and messages cross FastAPI's public boundary. Credential values, authorization headers, raw model output, upstream response bodies, exception text, and stack traces are not returned to Streamlit.
 
