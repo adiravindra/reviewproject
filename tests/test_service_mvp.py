@@ -89,8 +89,28 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(metrics.rated_count, 2)
         self.assertEqual(metrics.average_rating, 4.0)
         self.assertEqual(metrics.positive_percentage, 66.7)
-        self.assertEqual(metrics.sentiment_counts, {"positive": 2, "neutral": 0, "negative": 1})
+        self.assertEqual(
+            metrics.sentiment_counts,
+            {"positive": 2, "neutral": 0, "negative": 1, "mixed": 0},
+        )
         self.assertEqual(metrics.rating_distribution, {"1": 0, "2": 0, "3": 1, "4": 0, "5": 1})
+
+    def test_metrics_count_mixed_reviews_without_inflating_positive_share(self):
+        """Keep legitimate mixed evidence visible while preserving the positive numerator."""
+
+        sentiments = [
+            ReviewSentiment(review_id="r1", sentiment="positive"),
+            ReviewSentiment(review_id="r2", sentiment="mixed"),
+            ReviewSentiment(review_id="r3", sentiment="negative"),
+        ]
+
+        metrics = calculate_metrics(sample_reviews(), sentiments)
+
+        self.assertEqual(metrics.positive_percentage, 33.3)
+        self.assertEqual(
+            metrics.sentiment_counts,
+            {"positive": 1, "neutral": 0, "negative": 1, "mixed": 1},
+        )
 
     def test_metrics_allow_reviews_without_ratings(self):
         """Keep unrated review metrics defined without inventing an average."""

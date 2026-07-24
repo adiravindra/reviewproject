@@ -24,7 +24,8 @@ Provide a positive, neutral, negative, or mixed sentiment for every theme.
 Use mixed only when one theme contains meaningful positive and negative evidence.
 Return no more than five strengths, five weaknesses, and five actionable recommendations.
 For every submitted review ID, return exactly one sentiment entry, with no missing, duplicate, or unknown IDs.
-Keep each individual review sentiment positive, neutral, or negative.
+Keep each individual review sentiment positive, neutral, negative, or mixed.
+Use mixed for an individual review only when it contains meaningful positive and negative evidence.
 Use only the sentiment values permitted by the response schema.
 """
 

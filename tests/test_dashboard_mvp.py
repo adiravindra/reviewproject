@@ -478,11 +478,12 @@ class DashboardFormattingTests(unittest.TestCase):
         """Transform report values into deterministic metric and chart displays."""
 
         report = sample_report()
+        report["metrics"]["sentiment_counts"]["mixed"] = 0
         self.assertEqual(metric_values(report), ("3", "4.0 / 5", "66.7%", "Positive"))
         self.assertEqual(sentiment_rows(report)[0], {"Sentiment": "Positive", "Reviews": 2})
         self.assertEqual(
             [row["Sentiment"] for row in sentiment_rows(report)],
-            ["Positive", "Neutral", "Negative"],
+            ["Positive", "Neutral", "Negative", "Mixed"],
         )
         self.assertEqual(rating_rows(report)[4], {"Rating": "5 star", "Reviews": 1})
 
@@ -698,8 +699,8 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertIn(".ri-theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }", medium_css)
         self.assertIn(".ri-insight-grid { grid-template-columns: 1fr; }", medium_css)
 
-    def test_page_configuration_uses_streamlits_mobile_safe_sidebar_state(self):
-        """Let Streamlit collapse the sidebar automatically on narrow screens."""
+    def test_page_configuration_expands_the_history_sidebar(self):
+        """Make saved analysis history visible when the dashboard first opens."""
 
         with (
             patch.object(streamlit_app.st, "set_page_config") as set_page_config,
@@ -711,7 +712,7 @@ class DashboardFormattingTests(unittest.TestCase):
             page_title="Review Intelligence",
             page_icon="💬",
             layout="wide",
-            initial_sidebar_state="auto",
+            initial_sidebar_state="expanded",
         )
 
     def test_sidebar_buttons_have_explicit_readable_contrast(self):
@@ -756,8 +757,8 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertEqual(
             sentiment_spec["encoding"]["color"]["scale"],
             {
-                "domain": ["Positive", "Neutral", "Negative"],
-                "range": ["#15803d", "#a16207", "#b91c1c"],
+                "domain": ["Positive", "Neutral", "Negative", "Mixed"],
+                "range": ["#15803d", "#a16207", "#b91c1c", "#4f46e5"],
             },
         )
         self.assertEqual(rating_spec["encoding"]["color"]["value"], "#2563eb")
@@ -1025,6 +1026,7 @@ class DashboardRuntimeTests(unittest.TestCase):
             patch("dashboard.api_client.check_health", return_value=True),
             patch("dashboard.api_client.request_import_options", return_value=options) as option_call,
             patch("dashboard.api_client.request_import") as import_call,
+            patch("dashboard.api_client.request_history", return_value=[]) as history_call,
         ):
             app.run(timeout=30)
 
@@ -1052,6 +1054,7 @@ class DashboardRuntimeTests(unittest.TestCase):
         self.assertIn("Import reviews", [element.label for element in app.button])
         option_call.assert_called_once()
         import_call.assert_not_called()
+        history_call.assert_called_once_with("http://127.0.0.1:8000")
 
     def test_fifty_imported_reviews_render_and_analyze_only_first_forty(self):
         """Display all evidence, disclose the cap, and submit one first-40 copy."""
@@ -1209,7 +1212,7 @@ class DashboardRuntimeTests(unittest.TestCase):
         self.assertEqual(rendered_specs[0]["height"], 260)
         self.assertEqual(
             rendered_specs[0]["encoding"]["color"]["scale"]["range"],
-            ["#15803d", "#a16207", "#b91c1c"],
+            ["#15803d", "#a16207", "#b91c1c", "#4f46e5"],
         )
         for spec in rendered_specs:
             serialized = json.dumps(spec)

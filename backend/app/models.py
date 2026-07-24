@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 # Literal aliases deliberately constrain sentiment vocabulary at both runtime
 # validation and static-analysis boundaries.
-Sentiment = Literal["positive", "neutral", "negative"]
+Sentiment = Literal["positive", "neutral", "negative", "mixed"]
 ThemeSentiment = Literal["positive", "neutral", "negative", "mixed"]
 OverallSentiment = Literal["positive", "neutral", "negative", "mixed"]
 

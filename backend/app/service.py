@@ -15,7 +15,7 @@ def calculate_metrics(reviews: list[Review], sentiments: list[ReviewSentiment]) 
     """Derive reproducible rating and sentiment aggregates without model inference."""
 
     ratings = [review.rating for review in reviews if review.rating is not None]
-    counts = {"positive": 0, "neutral": 0, "negative": 0}
+    counts = {"positive": 0, "neutral": 0, "negative": 0, "mixed": 0}
     for item in sentiments:
         counts[item.sentiment] += 1
 

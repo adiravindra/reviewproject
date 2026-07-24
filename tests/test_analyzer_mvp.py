@@ -179,6 +179,20 @@ class AnalyzerTests(unittest.TestCase):
         self.assertEqual(json.loads(message["content"]), [review.model_dump() for review in reviews])
         self.assertNotIn("author", message["content"].lower())
 
+    def test_individual_review_may_return_mixed_sentiment(self):
+        """Accept meaningful positive and negative evidence without rejecting the Groq tool call."""
+
+        payload = valid_insights().model_dump()
+        payload["review_sentiments"][1]["sentiment"] = "mixed"
+
+        result = analyze_reviews(
+            sample_reviews(),
+            agent_factory=lambda **kwargs: FakeAgent({"structured_response": payload}),
+            model_factory=lambda: object(),
+        )
+
+        self.assertEqual(result.review_sentiments[1].sentiment, "mixed")
+
     def test_invocation_failure_is_sanitized(self):
         """Map invocation failures without exposing raw agent state or details."""
 

@@ -5,7 +5,6 @@ from inspect import signature
 from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
-from pydantic import ValidationError
 
 from backend.app.collector import CollectionError
 from backend.app.errors import AnalysisError
@@ -616,8 +615,8 @@ class ApiTests(unittest.TestCase):
 class ApiContractTests(unittest.TestCase):
     """Cover response additions consumed by later API and history endpoints."""
 
-    def test_theme_accepts_mixed_without_expanding_review_sentiment(self):
-        """Allow mixed themes while keeping deterministic review buckets three-state."""
+    def test_theme_and_review_sentiment_accept_mixed(self):
+        """Keep meaningful mixed evidence valid at both analysis levels."""
 
         theme = Theme(
             name="Pour control",
@@ -626,8 +625,8 @@ class ApiContractTests(unittest.TestCase):
             sentiment="mixed",
         )
         self.assertEqual(theme.sentiment, "mixed")
-        with self.assertRaises(ValidationError):
-            ReviewSentiment(review_id="r1", sentiment="mixed")
+        review_sentiment = ReviewSentiment(review_id="r1", sentiment="mixed")
+        self.assertEqual(review_sentiment.sentiment, "mixed")
 
     def test_public_error_accepts_history_not_found(self):
         """Keep the explicit absent-history code inside the declared public schema."""

@@ -303,7 +303,7 @@ _VISUALS = {
     "mixed": SentimentVisual("↔", "Mixed", "mixed", "#4f46e5", "#eef2ff", "#a5b4fc"),
 }
 
-_REVIEW_SENTIMENT_ORDER = ("positive", "neutral", "negative")
+_REVIEW_SENTIMENT_ORDER = ("positive", "neutral", "negative", "mixed")
 _INFO_VISUAL = SentimentVisual("🎯", "Action", "info", "#1d4ed8", "#eff6ff", "#93c5fd")
 
 
@@ -604,7 +604,7 @@ def _configure_page() -> None:
         page_title="Review Intelligence",
         page_icon="💬",
         layout="wide",
-        initial_sidebar_state="auto",
+        initial_sidebar_state="expanded",
     )
     st.markdown(f"<style>{DASHBOARD_CSS}</style>", unsafe_allow_html=True)
 
@@ -840,6 +840,9 @@ def _render_history(base_url: str) -> None:
     with st.sidebar:
         st.header("History")
         st.caption("Refresh and reopen a saved analysis report.")
+        if "history_items" not in st.session_state:
+            st.session_state["history_items"] = []
+            _load_history(base_url)
         if st.button("Refresh history", width="stretch"):
             _load_history(base_url)
         items = st.session_state.get("history_items", [])
