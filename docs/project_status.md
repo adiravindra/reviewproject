@@ -25,6 +25,50 @@
 - The backend exposes safe actionable errors for invalid URLs, blocked sites, timeouts, malformed structured review data, missing reviews, missing or invalid Groq configuration, unavailable Groq validation, model-output parsing, and history failures. Recoverable analysis errors explicitly tell the user that the collected reviews remain available for another attempt.
 - Credentials, headers, raw AI responses, upstream response bodies, internal exceptions, and tracebacks do not cross the FastAPI boundary.
 
+## Provider operations and responsible use
+
+Live imports require one Apify account and a backend-only Apify API token in
+`APIFY_API_TOKEN`. The application does not require Amazon or Google account
+credentials, browser cookies or session tokens. No Actor copy, task, schedule,
+build, webhook, custom Actor configuration, or Actor ID environment variable is
+required.
+
+- Amazon uses the public
+  [`automation-lab/amazon-reviews-scraper`](https://apify.com/automation-lab/amazon-reviews-scraper)
+  Actor with `sort: "helpful"` and no star-rating filter.
+- Google Maps uses the public
+  [`compass/google-maps-reviews-scraper`](https://apify.com/compass/google-maps-reviews-scraper)
+  Actor with `reviewsSort: "mostRelevant"` and no rating filter.
+- Both sources support 10, 20, 50, or 100 imported reviews. The dashboard keeps
+  all imported evidence visible and sends only the first 40 reviews to Groq;
+  larger reports disclose `40 of N reviews analyzed`.
+- Normalized imports are cached for 30 days. **Refresh from source** is the only
+  action that deliberately bypasses a live cache entry and can spend provider
+  quota again.
+
+Automation Lab's Free-plan Console pricing observed on July 23, 2026 was
+`$0.01` per run start plus `$2.00 per 1,000` reviews. Approximate maximum event
+costs for 10, 20, 50, and 100 reviews were `$0.03`, `$0.05`, `$0.11`, and
+`$0.21`. These values are planning estimates, not billing guarantees; provider
+pricing and availability can change. Operators should check current Actor
+availability, billing, and spending limits before a manual live request.
+
+Both Actors are unofficial scraping services. Their availability does not grant
+users permission to copy, analyze, retain, redistribute, or commercialize
+source content. Operators remain responsible for confirming their use is
+permitted and should review the
+[Amazon Conditions of Use](https://www.amazon.com/gp/help/customer/display.html?nodeId=GLSBYFE9MGKKQXXM)
+and
+[Google Maps Additional Terms](https://maps.google.com/help/terms_maps/?refresh=1).
+
+Review Intelligence discards provider reviewer identities, profiles, avatars,
+media, helpful-vote data, owner responses, provider IDs, and raw response
+bodies. Review text can still contain personal information and is sent to Groq
+only after explicit analysis. Apify provider-side retention can apply to Actor
+runs and datasets; version one does not delete those automatically. Historical
+reports labeled `Apify (Axesso)` or `Outscraper` remain readable with their
+original provenance, but neither is an active setup provider.
+
 ## Runtime and configuration
 
 The active non-secret settings are:

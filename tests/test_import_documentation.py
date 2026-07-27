@@ -18,44 +18,22 @@ class ImportDocumentationTests(unittest.TestCase):
         self.assertNotIn("OUTSCRAPER_API_KEY", content)
         self.assertNotIn("APIFY_API_TOKEN=test", content)
 
-    def test_readme_documents_actors_limits_analysis_cache_and_usage_controls(self):
-        """Give operators every prerequisite before a manual live request."""
+    def test_readme_documents_provider_prerequisites_and_usage_controls(self):
+        """Keep essential provider setup visible in the concise README."""
 
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         for required in (
             "Apify account",
             "Apify API token",
-            "automation-lab/amazon-reviews-scraper",
-            "compass/google-maps-reviews-scraper",
-            "$0.01",
-            "$2.00 per 1,000",
-            "$0.03",
-            "$0.05",
-            "$0.11",
-            "$0.21",
-            'sort: "helpful"',
-            'reviewsSort: "mostRelevant"',
-            "no star-rating filter",
+            "APIFY_API_TOKEN",
             "10, 20, 50, or 100",
-            "Source URL",
-            "Paste an Amazon product or Google Maps place URL",
             "first 40",
-            "40 of",
             "30 days",
             "Refresh from source",
-            "unofficial scraping services",
-            "cookies or session tokens",
-            "fixtures and fakes",
-            "pricing and availability can change",
-            "provider-side retention",
-            "Apify (Axesso)",
-            "Outscraper",
-            "Amazon Conditions of Use",
-            "Google Maps Additional Terms",
+            "quota",
         ):
             with self.subTest(required=required):
                 self.assertIn(required, readme)
-        self.assertNotIn("axesso_data/amazon-reviews-scraper", readme)
         self.assertNotIn("OUTSCRAPER_API_KEY", readme)
         self.assertNotIn("Outscraper account", readme)
 
@@ -86,6 +64,20 @@ class ImportDocumentationTests(unittest.TestCase):
             "fixture",
             "no Amazon or Google account credentials",
             "No Actor copy",
+            "$0.01",
+            "$2.00 per 1,000",
+            "$0.03",
+            "$0.05",
+            "$0.11",
+            "$0.21",
+            "no star-rating filter",
+            "40 of",
+            "Refresh from source",
+            "unofficial scraping services",
+            "cookies or session tokens",
+            "pricing and availability can change",
+            "Amazon Conditions of Use",
+            "Google Maps Additional Terms",
         ):
             with self.subTest(required=required):
                 self.assertIn(required, combined)

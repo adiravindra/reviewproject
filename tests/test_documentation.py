@@ -105,24 +105,28 @@ class DocumentationCoverageTests(unittest.TestCase):
         self.assertIn("automatically opens", readme)
         self.assertNotIn("does not load a `.env` file itself", readme)
 
-    def test_readme_documents_staged_mvp_commands_and_demo_behavior(self) -> None:
-        """Keep the public setup guide aligned with the staged Groq-only MVP."""
+    def test_readme_documents_cross_platform_setup_and_runtime_behavior(self) -> None:
+        """Keep the concise public setup guide aligned with the supported MVP."""
 
         readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
 
         for expected in (
+            "Windows / PowerShell",
+            "macOS / Linux",
             ".\\.venv\\Scripts\\python.exe -m pip install -r requirements.txt",
-            ".\\.venv\\Scripts\\python.exe -m unittest discover -s tests -v",
             ".\\.venv\\Scripts\\python.exe run_app.py",
+            ".venv/bin/python -m pip install -r requirements.txt",
+            ".venv/bin/python run_app.py",
+            "python -m uvicorn backend.app.main:app",
+            "python -m streamlit run dashboard/streamlit_app.py",
             "GROQ_API_KEY",
+            "APIFY_API_TOKEN",
             "REVIEWINSIGHT_GROQ_MODEL",
             "llama-3.3-70b-versatile",
-            "POST /api/collect",
-            "GET /api/demo",
-            "POST /api/analyze",
-            "GET /api/history",
+            "http://127.0.0.1:8501",
+            "http://127.0.0.1:8000/docs",
             "data/review_history.db",
-            "explicit",
+            "bundled demo data",
         ):
             with self.subTest(expected=expected):
                 self.assertIn(expected, readme)
