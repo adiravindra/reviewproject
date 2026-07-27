@@ -82,7 +82,10 @@ class ApifyAmazonReviewsAdapter:
 
         first = items[0] if items else {}
         source_key = str(first.get("asin") or "").strip().upper() or asin
-        title = f"Amazon product {source_key}"
+        title = (
+            str(first.get("productName") or "").strip()
+            or f"Amazon product {source_key}"
+        )
         reviews = tuple(
             ProviderReviewCandidate(
                 title=item.get("title"),

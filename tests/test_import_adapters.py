@@ -113,7 +113,10 @@ class ImportAdapterTests(unittest.TestCase):
                         "sort": "helpful",
                     },
                 )
-                self.assertEqual(result.title, "Amazon product B0GR6F79MT")
+                self.assertEqual(
+                    result.title,
+                    "Apple 2026 MacBook Neo 13-inch Laptop",
+                )
                 self.assertEqual(result.source_key, "B0GR6F79MT")
                 self.assertEqual(
                     [review.rating for review in result.reviews],
