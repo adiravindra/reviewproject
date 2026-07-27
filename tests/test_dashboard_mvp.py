@@ -4,6 +4,7 @@ import inspect
 import json
 import unittest
 from contextlib import nullcontext
+from pathlib import Path
 from unittest.mock import patch
 
 import requests
@@ -445,6 +446,17 @@ class DashboardClientTests(unittest.TestCase):
 
 class DashboardFormattingTests(unittest.TestCase):
     """Group visual-token and report-formatting regression contracts."""
+
+    def test_dashboard_css_is_loaded_from_external_stylesheet(self):
+        """Keep presentation rules in the colocated CSS asset."""
+
+        stylesheet_path = Path(streamlit_app.__file__).with_name("styles.css")
+
+        self.assertTrue(stylesheet_path.is_file())
+        self.assertEqual(
+            DASHBOARD_CSS,
+            stylesheet_path.read_text(encoding="utf-8"),
+        )
 
     def test_accessible_semantic_css_and_controls_keep_the_design_tokens(self):
         """Keep primary, focus, and named semantic tokens in the responsive CSS."""

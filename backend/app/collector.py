@@ -18,7 +18,6 @@ from bs4 import BeautifulSoup
 
 from backend.app.models import CollectionResult, Review, SourceInfo
 
-
 Resolver: TypeAlias = Callable[..., list[tuple[Any, ...]]]
 
 # A small manual-hop budget accommodates normal canonical redirects while
@@ -109,8 +108,7 @@ def collect_reviews(
         raise CollectionError("collection_timeout", TIMEOUT_MESSAGE) from None
     except (requests.RequestException, ValueError, TypeError, KeyError, json.JSONDecodeError):
         raise CollectionError("collection_failed", COLLECTION_MESSAGE) from None
-    except Exception:
-        raise CollectionError("collection_failed", COLLECTION_MESSAGE) from None
+    # Let unexpected exceptions propagate so they can be handled/logged by the caller
 
 
 def _validate_public_url(url: str, resolver: Resolver) -> None:
@@ -182,7 +180,8 @@ def _read_html(response) -> str:
         raise
     except requests.Timeout:
         raise CollectionError("collection_timeout", TIMEOUT_MESSAGE) from None
-    except Exception:
+    except (requests.RequestException, UnicodeDecodeError, OSError):
+        # Network, decoding, or I/O related errors should be treated as collection failures.
         raise CollectionError("collection_failed", COLLECTION_MESSAGE) from None
     finally:
         response.close()

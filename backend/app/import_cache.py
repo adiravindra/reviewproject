@@ -12,7 +12,6 @@ from pydantic import ValidationError
 from backend.app.imports.contracts import ReviewImportError
 from backend.app.models import CollectionResult
 
-
 DEFAULT_IMPORT_CACHE_PATH = Path(__file__).resolve().parents[2] / "data" / "review_import_cache.db"
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS review_import_cache (

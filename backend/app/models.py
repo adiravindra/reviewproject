@@ -10,7 +10,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
-
 # Literal aliases deliberately constrain sentiment vocabulary at both runtime
 # validation and static-analysis boundaries.
 Sentiment = Literal["positive", "neutral", "negative", "mixed"]

@@ -15,7 +15,6 @@ from backend.app.imports.contracts import (
 )
 from backend.app.imports.policies import extract_amazon_asin
 
-
 AUTOMATION_LAB_ACTOR_ID = "automation-lab~amazon-reviews-scraper"
 AUTOMATION_LAB_ENDPOINT = (
     "https://api.apify.com/v2/acts/"

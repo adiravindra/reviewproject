@@ -1,12 +1,11 @@
 """Normalize provider candidates into the existing review evidence contract."""
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from backend.app.imports.contracts import NormalizedProviderResult, ProviderImportResult
 from backend.app.models import Review
-
 
 _SPACE = re.compile(r"\s+")
 _AMAZON_DATE = re.compile(
@@ -53,7 +52,7 @@ def _date(value: Any) -> str | None:
         if match is None:
             return None
         try:
-            return datetime.strptime(" ".join(match.groups()), "%B %d %Y").date().isoformat()
+            return datetime.strptime(" ".join(match.groups()), "%B %d %Y").replace(tzinfo=timezone.utc).date().isoformat()
         except ValueError:
             return None
 

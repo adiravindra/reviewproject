@@ -5,7 +5,7 @@ from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from backend.app.collector import CollectionError, collect_reviews
+import backend.app.collector
 from backend.app.demo import load_demo_collection
 from backend.app.errors import AnalysisError
 from backend.app.history import HistoryStore
@@ -23,7 +23,6 @@ from backend.app.models import (
     ImportRequest,
 )
 from backend.app.service import run_analysis
-
 
 # Stable status mappings let clients distinguish user-correctable credentials,
 # transient providers, and upstream analysis failures without internal details.
@@ -59,8 +58,7 @@ COLLECTION_ERRORS = {
 IMPORT_ERRORS = {
     "invalid_import_url": (
         422,
-        "Use a full, unshortened HTTPS Amazon product/reviews URL or Google Maps "
-        "place URL matching the selected source.",
+        "Use a full, unshortened HTTPS Amazon product/reviews URL or Google Maps place URL matching the selected source.",
     ),
     "unsupported_import_platform": (422, "Select Amazon or Google Maps."),
     "unsupported_import_limit": (422, "Choose one of the limits shown for the selected source."),
@@ -78,8 +76,7 @@ IMPORT_ERRORS = {
     ),
     "provider_request_rejected": (
         502,
-        "The review provider rejected the import request. Check the source URL "
-        "or provider configuration and try again.",
+        "The review provider rejected the import request. Check the source URL or provider configuration and try again.",
     ),
     "no_reviews": (422, "At least two usable written reviews are required."),
     "provider_response_invalid": (
@@ -105,8 +102,22 @@ HISTORY_FAILURE_DETAIL = {
     "message": "Local analysis history could not be updated.",
 }
 
+UNEXPECTED_API_ERROR_TYPES = (
+    OSError,
+    RuntimeError,
+    ValueError,
+    TypeError,
+    AttributeError,
+    LookupError,
+    ImportError,
+    SyntaxError,
+    SystemError,
+    EOFError,
+    ArithmeticError,
+)
 
-def _collection_http_error(error: CollectionError) -> HTTPException:
+
+def _collection_http_error(error: backend.app.collector.CollectionError) -> HTTPException:
     """Convert a known collector failure into its small public envelope."""
 
     mapped = COLLECTION_ERRORS.get(error.code)
@@ -168,7 +179,7 @@ def _history_failure_http_error() -> HTTPException:
 
 
 def create_app(
-    collector=collect_reviews,
+    collector=backend.app.collector.collect_reviews,
     analysis_service=run_analysis,
     demo_loader=load_demo_collection,
     history_store=None,
@@ -225,9 +236,9 @@ def create_app(
 
         try:
             return collector(str(request.url))
-        except CollectionError as error:
+        except backend.app.collector.CollectionError as error:
             raise _collection_http_error(error) from None
-        except Exception:
+        except UNEXPECTED_API_ERROR_TYPES:
             raise _generic_analysis_http_error() from None
 
     @app.get("/api/import/options", response_model=ImportOptions)
@@ -238,7 +249,7 @@ def create_app(
             return importer.options()
         except ReviewImportError as error:
             raise _import_http_error(error) from None
-        except Exception:
+        except UNEXPECTED_API_ERROR_TYPES:
             raise _generic_import_http_error() from None
 
     @app.post("/api/import", response_model=CollectionResult)
@@ -249,7 +260,7 @@ def create_app(
             return importer.import_reviews(request)
         except ReviewImportError as error:
             raise _import_http_error(error) from None
-        except Exception:
+        except UNEXPECTED_API_ERROR_TYPES:
             raise _generic_import_http_error() from None
 
     @app.get("/api/demo", response_model=CollectionResult)
@@ -258,7 +269,7 @@ def create_app(
 
         try:
             return demo_loader()
-        except Exception:
+        except UNEXPECTED_API_ERROR_TYPES:
             raise HTTPException(
                 status_code=500,
                 detail={
@@ -273,18 +284,18 @@ def create_app(
 
         try:
             report = analysis_service(request)
-        except CollectionError as error:
+        except backend.app.collector.CollectionError as error:
             raise _collection_http_error(error) from None
         except AnalysisError as error:
             raise _analysis_http_error(error) from None
-        except Exception:
+        except UNEXPECTED_API_ERROR_TYPES:
             raise _generic_analysis_http_error() from None
 
         try:
             saved_id = store.save(report)
         except AnalysisError as error:
             raise _analysis_http_error(error) from None
-        except Exception:
+        except UNEXPECTED_API_ERROR_TYPES:
             raise _history_failure_http_error() from None
         return report.model_copy(update={"history_id": saved_id})
 
@@ -296,7 +307,7 @@ def create_app(
             return store.list_runs()
         except AnalysisError as error:
             raise _analysis_http_error(error) from None
-        except Exception:
+        except UNEXPECTED_API_ERROR_TYPES:
             raise _generic_analysis_http_error() from None
 
     @app.get("/api/history/{run_id}", response_model=AnalysisResponse)
@@ -318,7 +329,7 @@ def create_app(
             raise
         except AnalysisError as error:
             raise _analysis_http_error(error) from None
-        except Exception:
+        except UNEXPECTED_API_ERROR_TYPES:
             raise _generic_analysis_http_error() from None
 
     return app

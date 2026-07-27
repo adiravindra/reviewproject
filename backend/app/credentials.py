@@ -6,7 +6,6 @@ import requests
 
 from backend.app.errors import AnalysisError
 
-
 # Credential checks fail quickly before collection or paid model work; the
 # tuple bounds connection setup separately from response waiting.
 GROQ_API_KEY_VARIABLE = "GROQ_API_KEY"

@@ -10,7 +10,6 @@ from pydantic import ValidationError
 from backend.app.errors import AnalysisError
 from backend.app.models import AnalysisResponse, HistoryItem
 
-
 DEFAULT_HISTORY_PATH = Path(__file__).resolve().parents[2] / "data" / "review_history.db"
 """Locate the git-ignored local database used for saved analysis history."""
 

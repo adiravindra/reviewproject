@@ -5,7 +5,6 @@ from pathlib import Path
 
 from backend.app.models import CollectionResult, Review, SourceInfo
 
-
 DEMO_PATH = Path(__file__).resolve().parents[2] / "demo_data" / "product_reviews.json"
 
 

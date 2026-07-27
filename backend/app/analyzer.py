@@ -13,7 +13,6 @@ from backend.app.credentials import get_groq_api_key
 from backend.app.errors import AnalysisError
 from backend.app.models import AgentInsights, Review
 
-
 # The prompt explicitly forbids outside facts and asks for one structured result;
 # deterministic metrics stay out of the model and are computed by the service.
 SYSTEM_PROMPT = """You analyze customer reviews using only the supplied evidence.
@@ -46,7 +45,7 @@ def build_model():
         )
     except AnalysisError:
         raise
-    except Exception:
+    except (ImportError, ModuleNotFoundError):
         raise AnalysisError(
             "analysis_failed", "The AI provider could not be initialized."
         ) from None
@@ -75,12 +74,12 @@ def analyze_reviews(
         state = agent.invoke(
             {"messages": [{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}]}
         )
-    except Exception:
+    except (RuntimeError, ValueError, TimeoutError):
         raise AnalysisError("analysis_failed", "The AI analysis could not be completed.") from None
 
     try:
         insights = AgentInsights.model_validate(state["structured_response"])
-    except Exception:
+    except (ValueError, TypeError):
         raise AnalysisError(
             "model_output_invalid", "The AI analysis returned an invalid result."
         ) from None

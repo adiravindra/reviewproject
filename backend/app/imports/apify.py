@@ -13,7 +13,6 @@ from backend.app.imports.contracts import (
     classify_provider_status,
 )
 
-
 APIFY_ACTOR_ID = "compass~google-maps-reviews-scraper"
 APIFY_ENDPOINT = (
     f"https://api.apify.com/v2/acts/{APIFY_ACTOR_ID}/run-sync-get-dataset-items"

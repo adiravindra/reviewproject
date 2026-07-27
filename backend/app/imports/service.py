@@ -1,7 +1,7 @@
 """Orchestrate one explicit cached provider-backed review import."""
 
+from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta, timezone
-from typing import Callable, Mapping
 
 from backend.app.import_cache import CacheIdentity, ImportCacheStore
 from backend.app.imports.contracts import ReviewImportError, ReviewProviderAdapter
@@ -14,7 +14,6 @@ from backend.app.models import (
     ImportRequest,
     SourceInfo,
 )
-
 
 CACHE_CONTRACT_VERSION = "1"
 CACHE_TTL = timedelta(days=30)
